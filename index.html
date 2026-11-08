@@ -581,7 +581,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '2.0';
+const APP_VER = '2.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -616,7 +616,7 @@ const CATS = [
   ['kids', 'Kids / baby', '👶', 'exp'], ['entertainment', 'Entertainment', '🎬', 'exp'], ['subs', 'Subscriptions', '🔁', 'exp'],
   ['insurance', 'Insurance', '🛡️', 'exp'], ['emi', 'EMI / loan', '🏦', 'exp'], ['invest', 'Investments / SIP', '📈', 'inv'],
   ['trading', 'Trading & broker', '💹', 'inv'], ['tools', 'Trading tools', '🛠️', 'exp'], ['taxes', 'Taxes', '🧾', 'exp'],
-  ['cash', 'ATM cash', '💵', 'exp'], ['charges', 'Bank & card charges', '💳', 'exp'], ['gifts', 'Gifts & personal', '🎁', 'exp'], ['other', 'Uncategorised', '❔', 'exp'],
+  ['cash', 'ATM cash', '💵', 'exp'], ['charges', 'Bank & card charges', '💳', 'exp'], ['gifts', 'Gifts & personal', '🎁', 'exp'], ['parents', 'Sent to parents', '👪', 'exp'], ['other', 'Uncategorised', '❔', 'exp'],
   // income
   ['wages', 'Wages', '🚢', 'inc'], ['interest', 'Interest', '🏦', 'inc'], ['tradingpay', 'Trading payout', '💹', 'inc'],
   ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc'], ['refund', 'Refund / cashback', '↩️', 'inc'], ['family', 'Received from family', '👪', 'inc'],
@@ -721,7 +721,7 @@ function seedState() {
   const s = {
     v: 1,
     settings: {
-      meName: 'Ritesh', wifeName: 'Ankita', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH',
+      meName: 'Ritesh', wifeName: 'Ankita', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '',
       upiIds: { PhonePe: '', GPay: '', Paytm: '', 'Amazon Pay': '' }, lockMins: 5, theme: 'dark',
       sync: { url: '', key: '', lastAt: null }, remind: [3, 1],
     },
@@ -802,9 +802,10 @@ function classify(t, profKey) {
   const isSelf = /SENTMONEYTOOWN|RECEIVEDMONEYFROMOWN|FORMUTUALFUND|SWEEPTRANSFER|OWNACCOUNT/.test(c) || (own && c.includes('FUNDTRANSFERFROM' + own)) || (own && /^MB:SENTNEFT|^IB:/.test(c) && c.includes(own));
   const first = own ? compact(st.ownerMatch.split(/\s+/)[0]) : '';
   const selfUpi = profKey === 'me' && t.mode === 'UPI' && first && [first, own].includes(compact(t.payee));
-  if (ur) { out.cat = ur.cat; out.conf = 'h'; }
+  if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
   else if ((isSelf || selfUpi) && profKey === 'me') { out.cat = 'self'; out.conf = 'h'; }
   else if (profKey === 'me' && t.dir === 'dr' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
+  else if (profKey === 'me' && t.dir === 'dr' && listOf(st.parentsMatch).some(w => w.length >= 4 && c.includes(w))) { out.cat = 'parents'; out.conf = 'h'; out.for = 'parents'; }
   else if (profKey === 'wife' && t.dir === 'cr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'fromhusband'; out.conf = 'h'; }
   else {
     const fr = matchFriend(prof, c);
@@ -875,7 +876,7 @@ function markPaid(profKey, b, pay) {
   const prof = P(profKey);
   const p = { id: uid(), date: pay.date, amount: +pay.amount, mode: pay.mode, ref: pay.ref || '', note: pay.note || '', dueDate: b.nextDue, txnId: null };
   if (pay.createTxn) {
-    const t = touch({ id: uid(), date: pay.date, amount: +pay.amount, dir: 'dr', desc: b.name + ' (bill paid)', account: pay.account || b.account || '', cat: b.cat, app: pay.app || null, mode: pay.mode, payee: b.name, source: 'bill', billId: b.id, reviewed: true, note: pay.note || '' });
+    const t = touch({ id: uid(), for: b.forWho || '', date: pay.date, amount: +pay.amount, dir: 'dr', desc: b.name + ' (bill paid)', account: pay.account || b.account || '', cat: b.cat, app: pay.app || null, mode: pay.mode, payee: b.name, source: 'bill', billId: b.id, reviewed: true, note: pay.note || '' });
     prof.txns.push(t); p.txnId = t.id;
   }
   b.payments = b.payments || []; b.payments.push(p);
@@ -895,14 +896,14 @@ function linkBills(profKey, txns) {
       if (!b.variable && Math.abs(t.amount - b.amount) > Math.max(5, b.amount * 0.25)) continue;
       // already marked paid manually? -> replace the manual entry with the bank one
       const manual = (b.payments || []).find(p => p.txnId && Math.abs(daysBetween(p.date, t.date)) <= 6 && Math.abs(p.amount - t.amount) < 1 && prof.txns.find(x => x.id === p.txnId && x.source === 'bill' && !x.deleted));
-      if (manual) { removeRec(prof.txns, manual.txnId); manual.txnId = t.id; t.billId = b.id; t.cat = b.cat; touch(b); n++; break; }
+      if (manual) { removeRec(prof.txns, manual.txnId); manual.txnId = t.id; t.billId = b.id; t.cat = b.cat; if (b.forWho) t.for = b.forWho; touch(b); n++; break; }
       const already = (b.payments || []).some(p => p.txnId === t.id || (Math.abs(daysBetween(p.date, t.date)) <= 3 && Math.abs(p.amount - t.amount) < 1));
-      if (already) { t.billId = b.id; break; }
+      if (already) { t.billId = b.id; if (b.forWho) t.for = b.forWho; break; }
       if (Math.abs(daysBetween(b.nextDue, t.date)) <= 12) {
         b.payments = b.payments || [];
         b.payments.push({ id: uid(), date: t.date, amount: t.amount, mode: t.mode === 'NACH' ? 'Auto-debit' : t.mode, ref: t.ref, note: 'Matched from bank statement', dueDate: b.nextDue, txnId: t.id, auto: true });
         b.lastPaid = t.date; if (b.cycle === 'once') b.status = 'done'; else b.nextDue = addCycle(b.nextDue, b.cycle);
-        t.billId = b.id; t.cat = b.cat; touch(b); n++; break;
+        t.billId = b.id; t.cat = b.cat; if (b.forWho) t.for = b.forWho; touch(b); n++; break;
       }
     }
   }
@@ -1029,11 +1030,11 @@ const NAV = [
   ['sec', 'Overview'], ['dashboard', 'Dashboard', '🏠'], ['upcoming', 'Upcoming', '📅'],
   ['sec', 'Payments'], ['bills', 'Bills', '🧾'], ['subs', 'Subscriptions', '🔁'], ['money', 'Money', '💰'],
   ['sec', 'Planning'], ['plan', 'Budgets & Goals', '🎯'], ['worth', 'Net worth', '💎'],
-  ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'Ankita', '👩'],
+  ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'Ankita', '👩'], ['parents', 'Parents', '👪'],
   ['sec', 'Records'], ['calendar', 'Calendar', '🗓️'], ['history', 'History', '📜'], ['reports', 'Reports', '📊'],
   ['sec', ''], ['settings', 'Settings', '⚙️'],
 ];
-const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth' };
+const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents' };
 
 function toast(msg, ms = 2600) { $$('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
 function wifeName() { return S.settings.wifeName || 'Ankita'; }
@@ -1275,7 +1276,7 @@ function billsView(kind) {
   const rows = shown.map(b => {
     const st = b.status === 'active' ? billStatus(b) : { cls: '', txt: b.status === 'done' ? 'Done' : b.status === 'paused' ? 'Paused' : 'Cancelled' };
     const lastChange = (b.priceLog || []).slice(-1)[0];
-    return `<tr class="clk" data-act="editBill" data-id="${b.id}"><td><div class="flex" style="flex-wrap:nowrap"><span style="font-size:18px">${catIcon(b.cat)}</span><div><div class="b">${esc(b.name)}</div><div class="muted small">${esc(catName(b.cat))}${b.consumerNo ? ' · ' + esc(b.consumerNo) : ''}</div></div></div></td>
+    return `<tr class="clk" data-act="editBill" data-id="${b.id}"><td><div class="flex" style="flex-wrap:nowrap"><span style="font-size:18px">${catIcon(b.cat)}</span><div><div class="b">${esc(b.name)}${b.forWho === 'parents' ? ' <span class="pill vio">👪 ' + esc(S.settings.parentsName || 'Parents') + '</span>' : ''}</div><div class="muted small">${esc(catName(b.cat))}${b.consumerNo ? ' · ' + esc(b.consumerNo) : ''}</div></div></div></td>
     <td class="ra num b">${rs(b.amount)}${b.variable ? ' <span class="muted">~</span>' : ''}${lastChange ? `<div class="small ${lastChange.to > lastChange.from ? 'dr' : 'cr'}">${lastChange.to > lastChange.from ? '▲' : '▼'} from ${rs(lastChange.from)}</div>` : ''}</td>
     <td>${CYCLES[b.cycle]}</td><td>${b.nextDue ? fmtDate(b.nextDue) : '—'}<div><span class="pill ${st.cls}">${st.txt}</span></div></td>
     <td>${b.autopay ? '<span class="pill acc">Auto-debit</span>' : '<span class="pill">Manual</span>'}<div class="muted small">${esc(b.method || '')}${b.account ? ' · ' + esc(accName('me', b.account)) : ''}</div></td>
@@ -1312,6 +1313,7 @@ function txnsPanel(profKey) {
   const months = monthsWithData([profKey]);
   if (F.m) arr = arr.filter(t => ym(t.date) === F.m);
   if (F.from) arr = arr.filter(t => t.date >= F.from && t.date <= F.to);
+  if (F.forWho) arr = arr.filter(t => t.for === F.forWho || (F.forWho === 'parents' && t.cat === 'parents'));
   if (F.acc) arr = arr.filter(t => t.account === F.acc);
   if (F.cat) arr = arr.filter(t => t.cat === F.cat);
   if (F.app) arr = arr.filter(t => F.app === 'none' ? (t.mode === 'UPI' && t.dir === 'dr' && !t.app) : t.app === F.app);
@@ -1327,6 +1329,7 @@ function txnsPanel(profKey) {
     <select class="inp" data-act="flt" data-k="ty" data-prof="${profKey}"><option value="">All types</option><option value="exp" ${F.ty === 'exp' ? 'selected' : ''}>Expenses</option><option value="inc" ${F.ty === 'inc' ? 'selected' : ''}>Income</option><option value="xfer" ${F.ty === 'xfer' ? 'selected' : ''}>Transfers</option></select>
     <select class="inp" data-act="flt" data-k="cat" data-prof="${profKey}"><option value="">All categories</option>${catOptions(F.cat)}</select>
     ${profKey === 'me' || true ? `<select class="inp" data-act="flt" data-k="app" data-prof="${profKey}"><option value="">All UPI apps</option>${UPI_APPS.map(a => `<option ${F.app === a ? 'selected' : ''}>${a}</option>`).join('')}<option value="none" ${F.app === 'none' ? 'selected' : ''}>App unknown</option></select>` : ''}
+    ${F.forWho ? `<span class="pill vio">👪 For ${esc(S.settings.parentsName || 'Parents')}</span>` : ''}
     ${F.from ? `<span class="pill gold">📅 ${F.from === F.to ? fmtDate(F.from) : fmtDateShort(F.from) + ' – ' + fmtDate(F.to)}</span>` : ''}
     ${Object.values(F).some(Boolean) ? `<button class="btn sm ghost" data-act="fltClear" data-prof="${profKey}">Clear</button>` : ''}
   </div>
@@ -1466,7 +1469,7 @@ function doImport(link) {
   const existing = new Set(live(prof.txns).map(dedupeKey));
   const batch = uid(), added = [];
   I.rows.filter(r => r.sel).forEach(r => {
-    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
+    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
     if (t.remark && /HOME\s*EXPE|HOME\s*RENT/i.test(t.remark)) t.note = /RENT/i.test(t.remark) ? 'Home rent' : 'Home expense';
     const k = dedupeKey(t); if (existing.has(k)) return; existing.add(k);
     prof.txns.push(t); added.push(t);
@@ -1723,6 +1726,7 @@ function billModal(id, kind, preset) {
   <div class="frow"><label class="chk"><input type="checkbox" id="b_var" ${d.variable ? 'checked' : ''}> Amount changes each time</label><label class="chk"><input type="checkbox" id="b_auto" ${d.autopay ? 'checked' : ''}> Auto-debit / auto-pay</label>${isSub ? `<label class="chk"><input type="checkbox" id="b_unused" ${d.unused ? 'checked' : ''}> I hardly use it</label>` : ''}</div>
   <div class="frow"><div class="fld"><label>Pay by</label><select class="inp" id="b_meth">${PAY_MODES.map(m => `<option ${d.method === m ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
   <div class="fld"><label>From account</label><select class="inp" id="b_acc">${accOptions('me', d.account)}</select></div>
+  <div class="fld"><label>Paid for</label><select class="inp" id="b_for"><option value="">${esc(S.settings.meName)} (own)</option><option value="parents" ${d.forWho === 'parents' ? 'selected' : ''}>👪 ${esc(S.settings.parentsName || 'Parents')}</option></select></div>
   <div class="fld"><label>Status</label><select class="inp" id="b_st">${[['active', 'Active'], ['paused', 'Paused'], ['cancelled', 'Cancelled'], ['done', 'Done']].map(([k, l]) => `<option value="${k}" ${d.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
   <div class="frow"><div class="fld"><label>Consumer / account no.</label><input class="inp" id="b_cno" value="${esc(d.consumerNo)}"></div>
   <div class="fld"><label>Website / app link</label><input class="inp" id="b_url" value="${esc(d.url)}" placeholder="https://"></div>
@@ -1734,11 +1738,12 @@ function billModal(id, kind, preset) {
     `${b ? '<button class="btn dan" id="b_del">Delete</button><button class="btn" id="b_ics">📆 To calendar</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="b_save">Save</button>`, {
     onMount: m => {
       $('#b_kind', m).onchange = e => { const vals = collect(); billModal(id, e.target.value, Object.assign(vals, { kind: e.target.value })); };
-      const collect = () => ({ name: $('#b_name', m).value.trim(), kind: $('#b_kind', m).value, cat: $('#b_cat', m).value, amount: +$('#b_amt', m).value || 0, cycle: $('#b_cyc', m).value, nextDue: $('#b_due', m).value, variable: $('#b_var', m).checked, autopay: $('#b_auto', m).checked, unused: $('#b_unused', m) ? $('#b_unused', m).checked : false, method: $('#b_meth', m).value, account: $('#b_acc', m).value, status: $('#b_st', m).value, consumerNo: $('#b_cno', m).value.trim(), url: $('#b_url', m).value.trim(), trialEnd: $('#b_trial', m) ? $('#b_trial', m).value : '', match: $('#b_match', m).value.trim(), notes: $('#b_notes', m).value });
+      const collect = () => ({ name: $('#b_name', m).value.trim(), kind: $('#b_kind', m).value, cat: $('#b_cat', m).value, amount: +$('#b_amt', m).value || 0, cycle: $('#b_cyc', m).value, nextDue: $('#b_due', m).value, variable: $('#b_var', m).checked, autopay: $('#b_auto', m).checked, unused: $('#b_unused', m) ? $('#b_unused', m).checked : false, method: $('#b_meth', m).value, account: $('#b_acc', m).value, status: $('#b_st', m).value, consumerNo: $('#b_cno', m).value.trim(), url: $('#b_url', m).value.trim(), trialEnd: $('#b_trial', m) ? $('#b_trial', m).value : '', match: $('#b_match', m).value.trim(), notes: $('#b_notes', m).value, forWho: $('#b_for', m).value });
       $('#b_save', m).onclick = () => {
         const v = collect(); if (!v.name) { toast('Give it a name'); return; } if (!v.nextDue) { toast('Set the next due date'); return; }
         if (b) { if (+b.amount !== v.amount && b.amount) { b.priceLog = b.priceLog || []; b.priceLog.push({ date: today(), from: b.amount, to: v.amount }); } Object.assign(b, v); touch(b); }
-        else { const nb = touch(Object.assign({ id: uid(), payments: [], priceLog: [] }, v)); if (!nb.match) nb.match = nb.name; P('me').bills.push(nb); linkBills('me', live(P('me').txns).filter(t => t.date >= addDays(nb.nextDue, -40))); }
+        if (b && b.forWho !== undefined) live(P('me').txns).filter(t => t.billId === b.id).forEach(t => { t.for = v.forWho; touch(t); });
+        if (!b) { const nb = touch(Object.assign({ id: uid(), payments: [], priceLog: [] }, v)); if (!nb.match) nb.match = nb.name; P('me').bills.push(nb); linkBills('me', live(P('me').txns).filter(t => t.date >= addDays(nb.nextDue, -40))); }
         save(); closeModal(); render(); toast('Saved');
       };
       if (b) { $('#b_del', m).onclick = () => confirmBox('Delete ' + esc(b.name) + '?', 'Its payment history will be removed too.', 'Delete', () => { removeRec(P('me').bills, b.id); save(); render(); }, true); $('#b_ics', m).onclick = () => download(b.name.replace(/\W+/g, '_') + '.ics', icsFor([b]), 'text/calendar'); }
@@ -1767,7 +1772,8 @@ function txnModal(profKey, id) {
   ${isUpiOut ? `<div class="fld"><label>Paid from UPI app</label><select class="inp" id="t_app">${appOptions(t.app)}</select></div>` : ''}
   ${profKey === 'me' ? `<div class="fld" id="t_frw" style="${t.cat === 'friend' ? '' : 'display:none'}"><label>Friend</label><select class="inp" id="t_fr"><option value="">Choose…</option>${fr.map(f => `<option value="${f.id}" ${t.friendId === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div>` : ''}</div>
   <div class="fld" style="margin-bottom:12px"><label>Note</label><input class="inp" id="t_note" value="${esc(t.note || '')}" placeholder="${esc(t.remark || 'What was it for?')}"></div>
-  ${t.payee && t.payee.length >= 3 ? `<label class="chk"><input type="checkbox" id="t_rule"> Always use this category for “${esc(t.payee)}”</label>` : ''}
+  ${profKey === 'me' && t.dir === 'dr' ? `<label class="chk" style="margin-bottom:8px"><input type="checkbox" id="t_par" ${t.for === 'parents' ? 'checked' : ''}> 👪 Paid for ${esc(S.settings.parentsName || 'Parents')}</label>` : ''}
+  ${t.payee && t.payee.length >= 3 ? `<label class="chk"><input type="checkbox" id="t_rule"> Always use this category${profKey === 'me' && t.dir === 'dr' ? ' (and “for” tag)' : ''} for “${esc(t.payee)}”</label>` : ''}
   ${isUpiOut ? `<label class="chk mt"><input type="checkbox" id="t_appr" checked> Remember the app for this payee</label>` : ''}`,
     `<button class="btn dan" id="t_del">Delete</button><span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="t_save">Save</button>`, {
     onMount: m => {
@@ -1775,7 +1781,8 @@ function txnModal(profKey, id) {
       $('#t_save', m).onclick = () => {
         const cat = $('#t_cat', m).value; t.cat = cat; t.note = $('#t_note', m).value; t.reviewed = true; t.conf = 'h';
         if ($('#t_app', m)) { t.app = $('#t_app', m).value || null; t.appConf = t.app ? 'h' : 'l'; if ($('#t_appr', m)?.checked && t.app) prof.payeeApp[payeeKey(t.payee)] = t.app; }
-        if ($('#t_rule', m)?.checked) addRuleObj(profKey, t.payee, cat, t.dir);
+        if ($('#t_par', m)) t.for = $('#t_par', m).checked ? 'parents' : '';
+        if ($('#t_rule', m)?.checked) { addRuleObj(profKey, t.payee, cat, t.dir); const r = live(P(profKey).rules).find(x => compact(x.match) === compact(t.payee)); if (r) { r.for = t.for || ''; touch(r); } }
         if (cat === 'friend' && $('#t_fr', m)?.value) { const f = prof.friends.find(x => x.id === $('#t_fr', m).value); t.friendId = f.id; addFriendEntryFromTxn(f, t); if (!(f.aliases || []).some(a => compact(t.desc).includes(compact(a)))) { f.aliases = [...(f.aliases || []), t.payee]; touch(f); } }
         touch(t); save(); closeModal(); rerender();
       };
@@ -2054,7 +2061,7 @@ function kpi(lab, val, foot, cls = '') {
 }
 function billRow(b, profKey = 'me', occDate) {
   const d = occDate || b.nextDue, st = billStatus(b, d);
-  return `<div class="row"><div class="ico">${catIcon(b.cat)}</div><div class="mid"><div class="t1">${esc(b.name)} ${b.autopay ? '<span class="pill acc">Auto-debit</span>' : ''} ${b.unused ? '<span class="pill amb">Unused?</span>' : ''}</div><div class="t2">${fmtDate(d)} · ${CYCLES[b.cycle]} · ${esc(catName(b.cat))}${b.account ? ' · ' + esc(accName(profKey, b.account)) : ''}</div></div><div class="r"><div class="num b">${rs(b.amount)}${b.variable ? '<span class="muted small"> ~</span>' : ''}</div><span class="pill ${st.cls} ${st.cls === 'red' ? 'pulse' : ''}">${st.txt}</span></div><button class="btn sm" data-act="payBill" data-id="${b.id}" data-prof="${profKey}">Mark paid</button></div>`;
+  return `<div class="row"><div class="ico">${catIcon(b.cat)}</div><div class="mid"><div class="t1">${esc(b.name)} ${b.forWho === 'parents' ? '<span class="pill vio">👪</span>' : ''} ${b.autopay ? '<span class="pill acc">Auto-debit</span>' : ''} ${b.unused ? '<span class="pill amb">Unused?</span>' : ''}</div><div class="t2">${fmtDate(d)} · ${CYCLES[b.cycle]} · ${esc(catName(b.cat))}${b.account ? ' · ' + esc(accName(profKey, b.account)) : ''}</div></div><div class="r"><div class="num b">${rs(b.amount)}${b.variable ? '<span class="muted small"> ~</span>' : ''}</div><span class="pill ${st.cls} ${st.cls === 'red' ? 'pulse' : ''}">${st.txt}</span></div><button class="btn sm" data-act="payBill" data-id="${b.id}" data-prof="${profKey}">Mark paid</button></div>`;
 }
 function shell() {
   const pend = live(P('me').txns).filter(needsReview).length;
@@ -2501,7 +2508,7 @@ function reportModal() {
 const FACT = {
   drill: el => {
     const prof = el.dataset.prof || 'me', base = prof === 'wife' ? 'wife' : 'money';
-    VIEW.sub['f_' + prof] = { q: '', m: '', acc: '', cat: el.dataset.cat || '', app: '', ty: el.dataset.cat ? '' : 'exp', from: el.dataset.from, to: el.dataset.to };
+    VIEW.sub['f_' + prof] = { q: '', m: '', acc: '', cat: el.dataset.cat || '', app: '', ty: el.dataset.cat || el.dataset.for ? '' : 'exp', from: el.dataset.from, to: el.dataset.to, forWho: el.dataset.for || '' };
     VIEW.tab = base; VIEW.sub[base] = 'txns'; render(); window.scrollTo(0, 0);
   },
   quickAdd: () => modal('Add', `<div class="grid g3" style="gap:12px">${[['🧾', 'Bill', 'editBill', 'bill'], ['🔁', 'Subscription', 'editBill', 'sub'], ['💸', 'Expense / income', 'qaEntry', ''], ['⬆️', 'Import statement', 'qaImport', ''], ['🎯', 'Budget', 'budgetEdit', ''], ['🏆', 'Savings goal', 'goalEdit', ''], ['💼', 'Asset / loan', 'assetEdit', ''], ['🤝', 'Friend lend / borrow', 'qaFriend', ''], ['🚢', 'Voyage', 'voyageEdit', '']].map(([i, l, a, k]) => `<button class="card hov" style="text-align:left;cursor:pointer;padding:14px" data-act="${a}" data-kind="${k}"><div style="font-size:24px">${i}</div><div class="b mt" style="margin-top:8px">${esc(l)}</div></button>`).join('')}</div>`),
@@ -2531,6 +2538,67 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.voycheck && S) { const v = P('me').voyages.find(x => x.id === el.dataset.id); if (v) { v.checks = v.checks || {}; v.checks[el.dataset.voycheck] = el.checked; touch(v); save(); rerender(); } }
 });
+
+/* ============ BlueWave Finance — Parents section ============ */
+const parName = () => S.settings.parentsName || 'Parents';
+const isForParents = t => t.dir === 'dr' && (t.for === 'parents' || t.cat === 'parents');
+function parentsTx(from, to) { return txIn('me', from, to).filter(isForParents); }
+VIEWS.parents = () => {
+  const td = today(), per = VIEW.sub.pPer || '12m';
+  let from, to, lab;
+  if (per === 'month') { const k = VIEW.sub.pMonth || latestDataMonth(['me']); [from, to] = monthRange(k); lab = ymLabel(k); }
+  else if (per === 'fy') { const d = parseISO(td), y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; [from, to] = fyRange(y); lab = fyOf(td); }
+  else if (per === 'all') { from = '2000-01-01'; to = '2099-12-31'; lab = 'All time'; }
+  else { const e = latestDataMonth(['me']); from = monthRange(lastMonths(e, 12)[0])[0]; to = monthRange(e)[1]; lab = 'Last 12 months'; }
+  const tx = parentsTx(from, to).sort((a, b) => b.date.localeCompare(a.date));
+  const sent = tx.filter(t => t.cat === 'parents').reduce((s, t) => s + t.amount, 0);
+  const billsAmt = tx.filter(t => t.cat !== 'parents').reduce((s, t) => s + t.amount, 0);
+  const nMonths = Math.max(1, new Set(tx.map(t => ym(t.date))).size);
+  const pBills = live(P('me').bills).filter(b => b.forWho === 'parents' && b.status === 'active');
+  const due = pBills.flatMap(b => occurrences(b, td, addDays(td, 60)).slice(0, 1).map(d => ({ b, d }))).sort((a, b) => a.d.localeCompare(b.d));
+  const cats = (() => { const m = {}; tx.forEach(t => m[t.cat] = (m[t.cat] || 0) + t.amount); return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([c, v], i) => ({ label: catIcon(c) + ' ' + catName(c), value: v, color: CAT_COLORS[(i + 4) % CAT_COLORS.length] })); })();
+  const l12 = lastMonths(latestDataMonth(['me']), 12);
+  const groups = [['parents', 'Money sent', '#b18cff'], ['gas', 'Gas', '#ff9f5a'], ['electricity', 'Electricity', '#fbbf24'], ['phone', 'Phone', '#38e1ff'], ['dth', 'DTH', '#ff7ab6']];
+  const stacks = groups.map(([c, n, col]) => ({ name: n, color: col, values: l12.map(k => parentsTx(...monthRange(k)).filter(t => t.cat === c).reduce((s, t) => s + t.amount, 0)) }));
+  stacks.push({ name: 'Other', color: '#64748b', values: l12.map(k => parentsTx(...monthRange(k)).filter(t => !groups.some(g => g[0] === t.cat)).reduce((s, t) => s + t.amount, 0)) });
+  const setup = !S.settings.parentsMatch && !pBills.length && !tx.length;
+  return `<div class="flex" style="margin-bottom:14px"><div class="seg">${[['month', 'Month'], ['12m', '12 months'], ['fy', 'This FY'], ['all', 'All time']].map(([k, l]) => `<button class="${per === k ? 'on' : ''}" data-act="pPer" data-p="${k}">${l}</button>`).join('')}</div>
+  ${per === 'month' ? `<select class="inp" style="width:auto" data-act="pMonth">${monthsWithData(['me']).map(k => `<option value="${k}" ${ym(from) === k ? 'selected' : ''}>${ymLabel(k)}</option>`).join('')}</select>` : ''}<span class="sp" style="flex:1"></span>
+  <button class="btn" data-act="parentsSetup">⚙️ Names in bank</button><button class="btn pri" data-act="parentsBill">＋ Bill for ${esc(parName())}</button></div>
+  ${setup ? `<div class="alert vio">👪 <div><b>Set this up in 3 quick steps:</b><br>1. Tap <b>⚙️ Names in bank</b> and type your parents' names as they appear on your bank transfers, so money you send them is picked up automatically.<br>2. Add their gas, electricity, phone and DTH as bills with <b>Paid for: ${esc(parName())}</b> (button above). Payments matching those bills are tagged automatically.<br>3. For anything else (e.g. a one-off recharge), open the entry in Money and tick <b>👪 Paid for ${esc(parName())}</b>.</div></div>` : ''}
+  <div class="grid g4">${kpi('👪 Total for ' + esc(parName()), rs(sent + billsAmt), esc(lab), 'gold')}${kpi('💸 Money sent', rs(sent), tx.filter(t => t.cat === 'parents').length + ' transfers', 'vio')}${kpi('🧾 Bills & recharges', rs(billsAmt), 'Gas, electricity, phone, DTH…', 'acc')}${kpi('📆 Average per month', rs((sent + billsAmt) / nMonths), nMonths + ' month' + (nMonths === 1 ? '' : 's') + ' with payments', 'grn')}</div>
+  <div class="grid g21 mt"><div class="card"><h3>📊 Month by month <small>12 months</small></h3>${stackedBars(l12.map(ymLabel), stacks)}</div>
+  <div class="card"><h3>🍩 What it goes on</h3>${donut(cats, 'For ' + parName(), sent + billsAmt)}</div></div>
+  <div class="grid g2 mt"><div class="card"><h3>📅 Coming up for ${esc(parName())} <small>next 60 days</small></h3><div class="list">${due.map(x => billRow(x.b, 'me', x.d)).join('') || emptyBox('🧾', 'No bills for ' + esc(parName()) + ' yet', 'Add their gas, electricity, phone and DTH.', `<button class="btn sm pri" data-act="parentsBill">＋ Add a bill</button>`)}</div></div>
+  <div class="card"><h3>🧾 Their bills & recharges</h3><div class="list">${pBills.map(b => `<div class="row" style="cursor:pointer" data-act="editBill" data-id="${b.id}"><div class="ico">${catIcon(b.cat)}</div><div class="mid"><div class="t1">${esc(b.name)}</div><div class="t2">${CYCLES[b.cycle]} · next ${fmtDate(b.nextDue)}${b.consumerNo ? ' · ' + esc(b.consumerNo) : ''}</div></div><div class="r num b">${rs(b.amount)}</div></div>`).join('') || '<div class="muted small">None yet.</div>'}</div></div></div>
+  <div class="card mt"><h3>📜 Payments for ${esc(parName())} <small>${esc(lab)}</small><span class="sp"></span>${tx.length ? `<button class="btn sm ghost" data-act="drill" data-prof="me" data-for="parents" data-from="${from}" data-to="${to}">Open in Money →</button>` : ''}</h3>
+  ${tx.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Paid to</th><th>Category</th><th>From account</th><th class="ra">Amount</th></tr></thead><tbody>${tx.slice(0, 60).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td class="num">${fmtDate(t.date)}</td><td><b>${esc(t.payee || t.desc)}</b><div class="muted small">${esc(t.note || t.remark || '')}</div></td><td>${catPill(t.cat)}</td><td class="small">${esc(accName('me', t.account))}</td><td class="ra num b">${rs(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No payments tagged for ' + esc(parName()) + ' in this period yet.</div>'}</div>`;
+};
+function parentsSetupModal() {
+  modal('👪 ' + esc(parName()) + ' — names in bank', `<div class="frow"><div class="fld"><label>Show this section as</label><input class="inp" id="ps_n" value="${esc(parName())}" placeholder="Parents / Mummy-Papa"></div></div>
+  <div class="fld"><label>Their names as they appear in your bank transfers (comma separated)</label><input class="inp" id="ps_m" value="${esc(S.settings.parentsMatch || '')}" placeholder="e.g. THAKURLAL BAGHEL, (mother's name)"></div>
+  <div class="small muted mt">Any money you send whose bank narration contains one of these names is tagged <b>Sent to ${esc(parName())}</b>. Use at least 4 letters; full names work best.</div>`,
+    `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ps_s">Save & apply</button>`, {
+    onMount: m => $('#ps_s', m).onclick = () => {
+      S.settings.parentsName = $('#ps_n', m).value.trim() || 'Parents'; S.settings.parentsMatch = $('#ps_m', m).value.trim();
+      const names = listOf(S.settings.parentsMatch).filter(w => w.length >= 4); let n = 0;
+      live(P('me').txns).forEach(t => { if (t.dir === 'dr' && !t.reviewed && t.cat !== 'self' && names.some(w => compact(t.desc).includes(w))) { t.cat = 'parents'; t.for = 'parents'; t.conf = 'h'; touch(t); n++; } });
+      save(); closeModal(); render(); toast(n ? n + ' transfers tagged for ' + parName() : 'Saved');
+    }
+  });
+}
+const PACT = {
+  parentsSetup: () => parentsSetupModal(),
+  parentsBill: () => billModal(null, 'bill', { forWho: 'parents', cat: 'electricity', name: '' }),
+  pPer: el => { VIEW.sub.pPer = el.dataset.p; rerender(); },
+};
+const PCHANGE = { pMonth: el => { VIEW.sub.pMonth = el.value; rerender(); } };
+const _dash = VIEWS.dashboard;
+VIEWS.dashboard = () => {
+  const k = VIEW.sub.dashMonth || latestDataMonth(['me']), amt = parentsTx(...monthRange(k)).reduce((s, t) => s + t.amount, 0);
+  const row = `<div class="row" style="margin-top:6px"><div class="ico">👪</div><div class="mid"><div class="t1">${esc(parName())}</div><div class="t2">${ymLabel(k)}: ${rs(amt)} paid for them</div></div><button class="btn sm ghost" data-act="go" data-tab="parents">Open</button></div>`;
+  return _dash().replace('<div class="row" style="margin-top:6px"><div class="ico">🤝</div>', row + '<div class="row" style="margin-top:6px"><div class="ico">🤝</div>');
+};
 
 /* ============ BlueWave Finance — events & boot ============ */
 const ACT = {
@@ -2639,13 +2707,13 @@ const CHANGE = {
     });
   },
 };
-Object.assign(ACT, FACT); Object.assign(CHANGE, FCHANGE);
+Object.assign(ACT, FACT, PACT); Object.assign(CHANGE, FCHANGE, PCHANGE);
 function titleCase(s) { return String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).trim(); }
 function reclassify(k) {
   let n = 0;
   live(P(k).txns).filter(t => !t.reviewed && t.source === 'import' && !t.billId).forEach(t => {
     const c = classify(t, k); if (t.cat === 'friend' && t.friendId) return;
-    if (c.cat !== t.cat || c.app !== t.app) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
+    if (c.cat !== t.cat || c.app !== t.app || (c.for && c.for !== t.for)) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); if (c.for) t.for = c.for; touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
   });
   save(); rerender(); return n;
 }
