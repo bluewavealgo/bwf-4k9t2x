@@ -581,7 +581,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '2.2';
+const APP_VER = '2.3';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1036,11 +1036,11 @@ const NAV = [
   ['sec', 'Overview'], ['dashboard', 'Dashboard', '🏠'], ['upcoming', 'Upcoming', '📅'],
   ['sec', 'Payments'], ['bills', 'Bills', '🧾'], ['subs', 'Subscriptions', '🔁'], ['money', 'Money', '💰'],
   ['sec', 'Planning'], ['plan', 'Budgets & Goals', '🎯'], ['worth', 'Net worth', '💎'],
-  ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'Ankita', '👩'], ['parents', 'Parents', '👪'],
+  ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'Ankita', '👩'], ['parents', 'Parents', '👪'], ['contacts', 'Numbers & Emails', '📇'],
   ['sec', 'Records'], ['calendar', 'Calendar', '🗓️'], ['history', 'History', '📜'], ['reports', 'Reports', '📊'],
   ['sec', ''], ['settings', 'Settings', '⚙️'],
 ];
-const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents' };
+const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents', contacts: 'Numbers & Emails' };
 
 function toast(msg, ms = 2600) { $$('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
 function wifeName() { return S.settings.wifeName || 'Ankita'; }
@@ -2731,6 +2731,116 @@ Object.assign(PACT, {
   loanEdit: el => loanModal(el.dataset.id),
 });
 
+/* ---------- v2.3: numbers & emails for everyone ---------- */
+const LINKS2 = ['Bank account', 'UPI', 'Aadhaar', 'PAN', 'Income tax', 'Pension', 'Gas', 'DTH', 'Electricity', 'Insurance', 'Car loan', 'Trading / broker', 'Google / YouTube', 'Social media', 'Shopping', 'WhatsApp', 'Work / company', 'Other'];
+Object.assign(LINK_ICON, { 'Income tax': '🏛️', 'Trading / broker': '💹', 'Google / YouTube': '▶️', 'Social media': '📸', Shopping: '🛍️', 'Work / company': '💼' });
+const EMAIL_PROVIDERS = ['Gmail', 'Outlook / Hotmail', 'Yahoo', 'Rediffmail', 'iCloud', 'Company / other'];
+const ROLE_ICON = { self: '🧑', wife: '👩', dad: '👨', mom: '👩‍🦳', other: '🧑' };
+function ensureMembers() {
+  const t = nowIso(); let ch = false;
+  if (!live(P('me').members || []).length) { P('me').members = [{ id: uid(), role: 'self', name: S.settings.meName || 'Ritesh', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
+  if (!live(P('wife').members || []).length) { P('wife').members = [{ id: uid(), role: 'wife', name: S.settings.wifeName || 'Ankita', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
+  if (ch) save();
+}
+const findMember = (prof, id) => (P(prof).members || []).find(x => x.id === id);
+function contactLinks(prof, m, kind) {
+  const list = kind === 'email' ? (m.emails || []) : (m.phones || []);
+  return list.map(x => { const exp = x.validTill ? daysBetween(today(), x.validTill) : null; return `<div class="row" style="cursor:pointer;align-items:flex-start" data-act="${kind === 'email' ? 'emailEdit' : 'phoneEdit'}" data-prof="${prof}" data-m="${m.id}" data-id="${x.id}"><div class="ico">${kind === 'email' ? '✉️' : '📱'}</div><div class="mid"><div class="t1" style="white-space:normal;word-break:break-all">${kind === 'email' ? esc(x.email) : esc(fmtPhone(x.number))} <span class="pill">${kind === 'email' ? esc(x.provider || '') : esc(x.operator || '') + (x.type ? ' · ' + esc(x.type) : '')}</span>${x.primary ? ' <span class="pill gold">Main</span>' : ''}${exp != null ? ` <span class="pill ${exp < 0 ? 'red pulse' : exp <= 5 ? 'amb' : 'grn'}">${exp < 0 ? 'Expired' : 'Valid till ' + fmtDateShort(x.validTill)}</span>` : ''}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${(x.linked || []).map(l => `<span class="pill vio">${LINK_ICON[l] || '📌'} ${esc(l)}</span>`).join('')}${(x.extra || []).map(l => `<span class="pill acc">📌 ${esc(l)}</span>`).join('') || ((x.linked || []).length ? '' : '<span class="muted small">Not linked to anything yet</span>')}</div>${x.details ? `<div class="t2" style="white-space:normal;margin-top:5px">${esc(x.details)}</div>` : ''}</div>${x.rechargeAmt ? `<div class="r num b">${rs(x.rechargeAmt)}</div>` : ''}</div>`; }).join('');
+}
+function contactsView(profs) {
+  ensureMembers();
+  const all = profs.flatMap(p => live(P(p).members || []).map(m => ({ p, m })));
+  const q = (VIEW.sub.cq || '').toLowerCase().trim();
+  const rev = [];
+  all.forEach(({ m }) => { (m.phones || []).forEach(x => [...(x.linked || []), ...(x.extra || [])].forEach(l => rev.push({ l, v: fmtPhone(x.number), kind: '📱', m, d: x.details }))); (m.emails || []).forEach(x => [...(x.linked || []), ...(x.extra || [])].forEach(l => rev.push({ l, v: x.email, kind: '✉️', m, d: x.details }))); });
+  const order = l => { const i = LINKS2.indexOf(l); return i < 0 ? 99 : i; };
+  const shown = rev.filter(r => !q || (r.l + ' ' + r.v + ' ' + r.m.name + ' ' + (r.d || '')).toLowerCase().includes(q)).sort((a, b) => order(a.l) - order(b.l) || a.l.localeCompare(b.l));
+  const nP = all.reduce((s, x) => s + (x.m.phones || []).length, 0), nE = all.reduce((s, x) => s + (x.m.emails || []).length, 0);
+  const addProf = profs.length === 1 ? profs[0] : 'parents';
+  return `${profs.length > 1 ? `<div class="grid g4" style="margin-bottom:16px">${kpi('👥 People', all.length, '', 'vio')}${kpi('📱 Mobile numbers', nP, '', 'acc')}${kpi('✉️ Email IDs', nE, '', 'gold')}${kpi('🔗 Links recorded', rev.length, 'bank, gas, UPI, Aadhaar…', 'grn')}</div>` : ''}
+  <div class="alert acc">🔐 <div>Save numbers, email IDs and what they're linked to — <b>never passwords, PINs or OTPs</b>. Everything here is encrypted on your device with your PIN.</div><span class="sp"></span><button class="btn sm" data-act="memberEdit" data-prof="${addProf}">＋ Person</button></div>
+  <div class="grid g2">${all.map(({ p, m }) => `<div class="card"><h3><span style="font-size:26px">${ROLE_ICON[m.role] || '🧑'}</span><span style="font-size:17px">${esc(m.name)}</span>${p === 'parents' ? '<span class="pill vio">Parents</span>' : p === 'wife' ? '<span class="pill vio">Wife</span>' : m.role === 'self' ? '<span class="pill gold">You</span>' : ''}<span class="sp"></span><button class="btn sm ghost" data-act="memberEdit" data-prof="${p}" data-id="${m.id}">Edit</button></h3>
+    ${m.notes ? `<div class="small muted" style="margin:-4px 0 10px">${esc(m.notes)}</div>` : ''}
+    <div class="flex" style="margin-bottom:4px"><b class="small" style="flex:1;color:var(--tx2)">📱 MOBILE NUMBERS</b><button class="btn sm pri" data-act="phoneEdit" data-prof="${p}" data-m="${m.id}">＋ Number</button></div>
+    <div class="list">${contactLinks(p, m, 'phone') || '<div class="muted small" style="padding:8px 0">No numbers yet.</div>'}</div>
+    <div class="flex" style="margin:14px 0 4px"><b class="small" style="flex:1;color:var(--tx2)">✉️ EMAIL IDS</b><button class="btn sm pri" data-act="emailEdit" data-prof="${p}" data-m="${m.id}">＋ Email</button></div>
+    <div class="list">${contactLinks(p, m, 'email') || '<div class="muted small" style="padding:8px 0">No email IDs yet.</div>'}</div></div>`).join('')}</div>
+  <div class="card mt"><h3>🔗 What is linked where <small>${shown.length} links</small><span class="sp"></span><input class="inp" style="width:220px" placeholder="🔎 Search: bank, gas, 98765…" value="${esc(VIEW.sub.cq || '')}" data-act="cq"></h3>${shown.length ? `<div class="tblw"><table class="t"><thead><tr><th>Linked to</th><th>Number / email</th><th>Whose</th><th>Details</th></tr></thead><tbody>${shown.map(x => `<tr><td><b>${LINK_ICON[x.l] || '📌'} ${esc(x.l)}</b></td><td class="num" style="word-break:break-all">${x.kind} ${esc(x.v)}</td><td>${esc(x.m.name)}</td><td class="small muted">${esc(x.d || '')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="muted small">${rev.length ? 'Nothing matches your search.' : 'Tick “linked to” on each number and email to build this list.'}</div>`}</div>`;
+}
+function familyView() { return contactsView(['parents']); }
+VIEWS.contacts = () => contactsView(['me', 'wife', 'parents']);
+function linkPicker(sel, extra) {
+  return `<div style="display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:4px">${LINKS2.map(l => `<label class="chk"><input type="checkbox" data-ln="${l}" ${(sel || []).includes(l) ? 'checked' : ''}> ${LINK_ICON[l] || '📌'} ${l}</label>`).join('')}</div>
+  <div class="fld mt"><label>Also linked to (type your own, comma separated)</label><input class="inp" id="ln_x" value="${esc((extra || []).join(', '))}" placeholder="e.g. Tradetron, Delta Exchange, LIC, school"></div>`;
+}
+const readLinks = el => ({ linked: $$('[data-ln]', el).filter(x => x.checked).map(x => x.dataset.ln), extra: $('#ln_x', el).value.split(',').map(s => s.trim()).filter(Boolean) });
+function memberModal(id, prof = 'parents') {
+  if (!prof) prof = 'parents';
+  const m = id ? findMember(prof, id) : null;
+  modal(m ? 'Edit ' + esc(m.name) : 'Add person', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="mm_n" value="${esc(m ? m.name : '')}" placeholder="e.g. Papa, Mummy, Bhai"></div><div class="fld"><label>Who</label><select class="inp" id="mm_r">${[['self', '🧑 Me'], ['wife', '👩 Wife'], ['dad', '👨 Dad'], ['mom', '👩‍🦳 Mom'], ['other', '🧑 Other family']].map(([k, l]) => `<option value="${k}" ${(m ? m.role : (prof === 'parents' ? 'other' : 'other')) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  <div class="fld"><label>Section</label><select class="inp" id="mm_p" ${m ? 'disabled' : ''}><option value="me" ${prof === 'me' ? 'selected' : ''}>${esc(S.settings.meName)}'s</option><option value="wife" ${prof === 'wife' ? 'selected' : ''}>${esc(wifeName())}'s</option><option value="parents" ${prof === 'parents' ? 'selected' : ''}>Parents</option></select></div></div>
+  <div class="fld"><label>Notes (optional)</label><input class="inp" id="mm_no" value="${esc(m?.notes || '')}" placeholder="e.g. PPO no., gas consumer no., customer IDs"></div>`,
+    `${m && m.role !== 'self' ? '<button class="btn dan" id="mm_d">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="mm_s">Save</button>`, {
+    onMount: el => {
+      $('#mm_s', el).onclick = () => { const v = { name: $('#mm_n', el).value.trim(), role: $('#mm_r', el).value, notes: $('#mm_no', el).value.trim() }; if (!v.name) { toast('Enter a name'); return; } if (m) { Object.assign(m, v); touch(m); } else { const tp = $('#mm_p', el).value; P(tp).members = P(tp).members || []; P(tp).members.push(touch({ id: uid(), phones: [], emails: [], ...v })); } save(); closeModal(); rerender(); };
+      if ($('#mm_d', el)) $('#mm_d', el).onclick = () => confirmBox('Delete ' + esc(m.name) + '?', 'Their saved numbers and email IDs will be removed too.', 'Delete', () => { removeRec(P(prof).members, m.id); save(); rerender(); }, true);
+    }
+  });
+}
+function phoneModal(mid, pid, prof = 'parents') {
+  const m = findMember(prof, mid); if (!m) return;
+  const p = pid ? (m.phones || []).find(x => x.id === pid) : null;
+  const d = p || { number: '', operator: 'Jio', type: 'Prepaid', linked: [], extra: [], details: '', rechargeAmt: '', validTill: '', primary: !(m.phones || []).length };
+  modal((p ? 'Edit number' : 'Add number') + ' — ' + esc(m.name), `<div class="frow"><div class="fld"><label>Mobile number</label><input class="inp" id="ph_n" inputmode="tel" value="${esc(d.number)}" placeholder="10-digit number"></div><div class="fld"><label>Operator</label><select class="inp" id="ph_o">${OPERATORS.map(o => `<option ${o === d.operator ? 'selected' : ''}>${o}</option>`).join('')}</select></div><div class="fld"><label>Plan</label><select class="inp" id="ph_t">${['Prepaid', 'Postpaid'].map(o => `<option ${o === d.type ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div>
+  <label class="chk" style="margin-bottom:12px"><input type="checkbox" id="ph_pr" ${d.primary ? 'checked' : ''}> ⭐ Main number</label>
+  <div class="fld" style="margin-bottom:12px"><label>Linked to</label>${linkPicker(d.linked, d.extra)}</div>
+  <div class="fld" style="margin-bottom:12px"><label>Details</label><input class="inp" id="ph_d" value="${esc(d.details)}" placeholder="e.g. PNB pension a/c, Bharat Gas consumer no., Tata Play ID"></div>
+  <div class="frow"><div class="fld"><label>Recharge amount (₹)</label><input class="inp" id="ph_a" type="number" inputmode="decimal" value="${esc(d.rechargeAmt)}"></div><div class="fld"><label>Valid till</label><input class="inp" id="ph_v" type="date" value="${esc(d.validTill)}"></div><div class="fld"><label>Pack length</label><select class="inp" id="ph_c"><option value="monthly">~1 month (28/30 days)</option><option value="quarterly">~3 months (84/90 days)</option><option value="yearly">1 year</option></select></div></div>
+  ${p && p.billId ? '<div class="small muted">A recharge reminder for this number is in Bills.</div>' : `<label class="chk"><input type="checkbox" id="ph_b" checked> Add a recharge reminder when amount and “valid till” are filled</label>`}`,
+    `${p ? '<button class="btn dan" id="ph_del">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ph_s">Save</button>`, {
+    onMount: el => {
+      $('#ph_s', el).onclick = () => {
+        const v = { number: $('#ph_n', el).value.trim(), operator: $('#ph_o', el).value, type: $('#ph_t', el).value, ...readLinks(el), details: $('#ph_d', el).value.trim(), rechargeAmt: +$('#ph_a', el).value || 0, validTill: $('#ph_v', el).value, primary: $('#ph_pr', el).checked };
+        if (!/\d{6,}/.test(v.number.replace(/\D/g, ''))) { toast('Enter the mobile number'); return; }
+        m.phones = m.phones || []; if (v.primary) m.phones.forEach(x => x.primary = false);
+        let ph = p; if (ph) Object.assign(ph, v); else { ph = { id: uid(), ...v }; m.phones.push(ph); }
+        if ($('#ph_b', el)?.checked && v.rechargeAmt && v.validTill) { const b = touch({ id: uid(), kind: 'bill', name: `${m.name} ${v.operator} recharge (${fmtPhone(v.number).slice(-5)})`, cat: 'phone', amount: v.rechargeAmt, cycle: $('#ph_c', el).value, nextDue: v.validTill, status: 'active', payments: [], priceLog: [], forWho: prof === 'parents' ? 'parents' : '', method: 'UPI', match: '', notes: 'Number ' + v.number }); P('me').bills.push(b); ph.billId = b.id; }
+        else if (ph.billId) { const b = P('me').bills.find(x => x.id === ph.billId); if (b && !b.deleted) { if (v.rechargeAmt) b.amount = v.rechargeAmt; if (v.validTill) b.nextDue = v.validTill; touch(b); } }
+        touch(m); save(); closeModal(); rerender(); toast('Saved');
+      };
+      if (p) $('#ph_del', el).onclick = () => confirmBox('Delete this number?', '', 'Delete', () => { m.phones = m.phones.filter(x => x.id !== p.id); touch(m); save(); rerender(); }, true);
+    }
+  });
+}
+function emailModal(mid, eid, prof = 'parents') {
+  const m = findMember(prof, mid); if (!m) return;
+  const e = eid ? (m.emails || []).find(x => x.id === eid) : null;
+  const d = e || { email: '', provider: 'Gmail', linked: [], extra: [], details: '', primary: !(m.emails || []).length };
+  modal((e ? 'Edit email' : 'Add email') + ' — ' + esc(m.name), `<div class="frow"><div class="fld" style="grid-column:span 2"><label>Email ID</label><input class="inp" id="em_e" type="email" inputmode="email" autocomplete="off" value="${esc(d.email)}" placeholder="name@gmail.com"></div><div class="fld"><label>Provider</label><select class="inp" id="em_p">${EMAIL_PROVIDERS.map(o => `<option ${o === d.provider ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div>
+  <label class="chk" style="margin-bottom:12px"><input type="checkbox" id="em_pr" ${d.primary ? 'checked' : ''}> ⭐ Main email</label>
+  <div class="fld" style="margin-bottom:12px"><label>Linked to</label>${linkPicker(d.linked, d.extra)}</div>
+  <div class="fld"><label>Details</label><input class="inp" id="em_d" value="${esc(d.details)}" placeholder="e.g. recovery number 98765…, used for Kotak NRE statements"></div>`,
+    `${e ? '<button class="btn dan" id="em_del">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="em_s">Save</button>`, {
+    onMount: el => {
+      $('#em_s', el).onclick = () => {
+        const v = { email: $('#em_e', el).value.trim(), provider: $('#em_p', el).value, ...readLinks(el), details: $('#em_d', el).value.trim(), primary: $('#em_pr', el).checked };
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email)) { toast('Enter a valid email ID'); return; }
+        m.emails = m.emails || []; if (v.primary) m.emails.forEach(x => x.primary = false);
+        if (e) Object.assign(e, v); else m.emails.push({ id: uid(), ...v });
+        touch(m); save(); closeModal(); rerender(); toast('Saved');
+      };
+      if (e) $('#em_del', el).onclick = () => confirmBox('Delete this email ID?', '', 'Delete', () => { m.emails = m.emails.filter(x => x.id !== e.id); touch(m); save(); rerender(); }, true);
+    }
+  });
+}
+Object.assign(PACT, {
+  memberEdit: el => memberModal(el.dataset.id, el.dataset.prof || 'parents'),
+  phoneEdit: el => phoneModal(el.dataset.m, el.dataset.id, el.dataset.prof || 'parents'),
+  emailEdit: el => emailModal(el.dataset.m, el.dataset.id, el.dataset.prof || 'parents'),
+});
+Object.assign(PCHANGE, { cq: el => { VIEW.sub.cq = el.value; rerender(); const i = $('[data-act=cq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } });
+
 /* ============ BlueWave Finance — events & boot ============ */
 const ACT = {
   go: el => { VIEW.tab = el.dataset.tab; if (el.dataset.sub) VIEW.sub[el.dataset.tab === 'wife' ? 'wife' : 'money'] = el.dataset.sub; $('#side')?.classList.remove('open'); $('.scrim')?.remove(); render(); window.scrollTo(0, 0); },
@@ -2857,14 +2967,14 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target;
-  if (el.dataset.act && CHANGE[el.dataset.act] && el.dataset.k !== 'q') { CHANGE[el.dataset.act](el); return; }
+  if (el.dataset.act && CHANGE[el.dataset.act] && el.dataset.k !== 'q' && el.dataset.act !== 'cq') { CHANGE[el.dataset.act](el); return; }
   if (!S) return;
   if (el.dataset.set) { const k = el.dataset.set; S.settings[k] = k === 'lockMins' ? +el.value : k === 'remind' ? el.value.split(',').map(Number) : el.value; if (k === 'wifeName') S.profiles.wife.name = el.value; if (k === 'meName') S.profiles.me.name = el.value; save(); rerender(); toast('Saved'); }
   if (el.dataset.upi) { S.settings.upiIds[el.dataset.upi] = el.value.trim(); save(); toast('Saved'); }
   if (el.dataset.sync) { S.settings.sync[el.dataset.sync] = el.value.trim(); save(); toast('Saved'); rerender(); }
 });
 let qTimer = null;
-document.addEventListener('input', e => { const el = e.target; if (el.dataset.act === 'flt' && el.dataset.k === 'q') { clearTimeout(qTimer); qTimer = setTimeout(() => CHANGE.flt(el), 300); } });
+document.addEventListener('input', e => { const el = e.target; if (el.dataset.act === 'flt' && el.dataset.k === 'q') { clearTimeout(qTimer); qTimer = setTimeout(() => CHANGE.flt(el), 300); } if (el.dataset.act === 'cq') { clearTimeout(qTimer); qTimer = setTimeout(() => CHANGE.cq(el), 300); } });
 document.addEventListener('keydown', e => {
   IDLE = Date.now();
   if ($('#lock') && /^[0-9]$/.test(e.key)) pinKey(e.key); else if ($('#lock') && e.key === 'Backspace') pinKey('del'); else if ($('#lock') && e.key === 'Enter') pinKey('ok');
