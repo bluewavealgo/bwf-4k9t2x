@@ -437,8 +437,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     date: [/^(txn\.?\s*|transaction\s*|value\s*|post\s*)?date$/i],
     narr: [/^(narration|description|particulars|details|transaction details|remarks)$/i],
     ref: [/chq|cheque|ref/i],
-    dr: [/^withdrawal/i, /^debit/i, /^withdrawals/i],
-    cr: [/^deposit/i, /^credit/i],
+    dr: [/^withdrawal/i, /^debit/i, /^withdrawals/i, /^dr\.?\s*(amount|amt)/i],
+    cr: [/^deposit/i, /^credit/i, /^cr\.?\s*(amount|amt)/i],
     bal: [/^balance/i],
   };
 
@@ -581,7 +581,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '2.1';
+const APP_VER = '2.2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -620,10 +620,10 @@ const CATS = [
   // income
   ['wages', 'Wages', '🚢', 'inc'], ['interest', 'Interest', '🏦', 'inc'], ['tradingpay', 'Trading payout', '💹', 'inc'],
   ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc'], ['refund', 'Refund / cashback', '↩️', 'inc'], ['family', 'Received from family', '👪', 'inc'],
-  ['otherinc', 'Other income', '➕', 'inc'],
+  ['pension', 'Pension', '🧓', 'inc'], ['otherinc', 'Other income', '➕', 'inc'],
   // transfers (excluded from spend/income)
   ['self', 'Self-transfer', '🔄', 'xfer'], ['wife', 'Sent to Ankita', '👩', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer'],
-  ['friend', 'Friends (lend/borrow)', '🤝', 'xfer'],
+  ['friend', 'Friends (lend/borrow)', '🤝', 'xfer'], ['fromson', 'Received from Ritesh', '👨', 'xfer'],
 ];
 const CAT = Object.fromEntries(CATS.map(([id, name, icon, type]) => [id, { id, name, icon, type }]));
 const catName = id => (CAT[id] || CAT.other).name;
@@ -644,7 +644,7 @@ const RULES_DR = [
   ['tools', /TRADETRON|ALGOTEST|TICKERTAPE|NEUTRINO|SENSIBULL|STREAK|TRADINGVIEW|OPSTRA|QUANTSAPP|STOCKMOCK/],
   ['taxes', /ETAX|INCOMETAX|CLEARTAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT/],
   ['insurance', /INSURANC|CAREHEALTH|POLICYBAZAAR|MAXLIFE|LICOFINDIA|HDFCLIFE|ICICIPRU|STARHEALTH|NIVABUPA|ACKO|GODIGIT/],
-  ['emi', /\bEMI|LOANREPAY|BAJAJFIN|HOMELOAN|CARLOAN/],
+  ['emi', /\bEMI|EMI\b|LOANREPAY|LOANRECOVERY|LOANAC|BAJAJFIN|HOMELOAN|CARLOAN|AUTOLOAN|VEHICLELOAN|LNREC|LOANINST/],
   ['cash', /^ATL\/|^ATW\/|ATMWDL|CASHWDL|CASHWITHDRAWAL|^ATM/],
   ['home', /^MB:HOMEEXPENSE|HOMEEXPE$/],
   ['rent', /HOMERENT|\/RENT|RENTPAY|MAINTENANCE|SOCIETY|NOBROKER/],
@@ -669,6 +669,7 @@ const RULES_DR = [
   ['gifts', /GIFT/],
 ];
 const RULES_CR = [
+  ['pension', /PENSION|PENSN|PENS\.|SPARSH|CPAO|PPOPEN|PENCR|\/PEN\//],
   ['wages', /NREREM|VSHIPS|SALARY|WAGES|\/SAL\/|SHIPMANAGEMENT|SHIPPING/],
   ['interest', /^SBINT|INT\.?PD|INTEREST|^INT:/],
   ['refund', /CRADJ|REFUND|REVERSAL|\/REV\/|CASHBACK|^REV/],
@@ -714,7 +715,7 @@ function remarkOf(d) {
 const payeeKey = p => compact(p).replace(/[^A-Z]/g, '').slice(0, 24);
 
 /* ---------- state ---------- */
-const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], payeeApp: {}, dismissed: [] });
+const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], payeeApp: {}, dismissed: [] });
 function seedState() {
   const t = nowIso();
   const acc = (bank, type, name, extra = {}) => ({ id: uid(), bank, type, name, last4: '', status: 'active', updatedAt: t, ...extra });
@@ -725,9 +726,11 @@ function seedState() {
       upiIds: { PhonePe: '', GPay: '', Paytm: '', 'Amazon Pay': '' }, lockMins: 5, theme: 'dark',
       sync: { url: '', key: '', lastAt: null }, remind: [3, 1],
     },
-    profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('Ankita') },
+    profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('Ankita'), parents: EMPTY_PROFILE('Parents') },
   };
   s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('Cash', 'Cash', 'Cash wallet')];
+  s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Papa PNB (pension)')];
+  s.profiles.parents.members = [{ id: uid(), role: 'dad', name: 'Papa', phones: [], notes: '', updatedAt: t }, { id: uid(), role: 'mom', name: 'Mummy', phones: [], notes: '', updatedAt: t }];
   s.profiles.wife.accounts = [acc('SBI', 'Savings', 'Ankita SBI'), acc('Axis', 'Savings', 'Ankita Axis', { status: 'closed' }), acc('Cash', 'Cash', 'Ankita cash')];
   return s;
 }
@@ -774,7 +777,7 @@ async function unlockVault(pin) {
     S = JSON.parse(new TextDecoder().decode(pt)); KEY = k; migrate(); return true;
   } catch (e) { return false; }
 }
-function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); ['me', 'wife'].forEach(k => { S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k]); }); }
+function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); PROFS.forEach(k => { const fresh = !S.profiles[k]; S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k] || d.profiles[k]); if (fresh) S.profiles[k].updatedAt = nowIso(); }); }
 let saveTimer = null;
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(() => persist(), 250); }
 async function persist() {
@@ -807,6 +810,8 @@ function classify(t, profKey) {
   else if (profKey === 'me' && t.dir === 'dr' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
   else if (profKey === 'me' && t.dir === 'dr' && listOf(st.parentsMatch).some(w => w.length >= 4 && c.includes(w))) { out.cat = 'parents'; out.conf = 'h'; out.for = 'parents'; }
   else if (profKey === 'wife' && t.dir === 'cr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'fromhusband'; out.conf = 'h'; }
+  else if (profKey === 'parents' && t.dir === 'cr' && own && (c.includes(own) || listOf(st.husbandMatch).some(w => c.includes(w)))) { out.cat = 'fromson'; out.conf = 'h'; }
+  else if (profKey === 'parents' && t.dir === 'dr' && (live(prof.loans || []).find(l => l.match && c.includes(compact(l.match))))) { const l = live(prof.loans).find(l => l.match && c.includes(compact(l.match))); out.cat = 'emi'; out.conf = 'h'; out.loanId = l.id; }
   else {
     const fr = matchFriend(prof, c);
     if (fr) { out.cat = 'friend'; out.conf = 'h'; out.friendId = fr.id; }
@@ -941,10 +946,11 @@ function accountBalance(profKey, accId) {
 }
 
 /* ---------- sync (manual, via the user's own Google Apps Script) ---------- */
-const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages'];
+const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans'];
+const PROFS = ['me', 'wife', 'parents'];
 function unsyncedCount() {
   const since = S.settings.sync.lastAt || '';
-  let n = 0; ['me', 'wife'].forEach(k => COLL.forEach(c => { n += P(k)[c].filter(r => (r.updatedAt || '') > since).length; }));
+  let n = 0; PROFS.forEach(k => COLL.forEach(c => { n += (P(k)[c] || []).filter(r => (r.updatedAt || '') > since).length; }));
   return n;
 }
 function mergeProfile(local, remote) {
@@ -964,7 +970,7 @@ async function callScript(body) {
 }
 async function runSync() {
   const { url, key } = S.settings.sync; if (!url || !key) throw new Error('Sync is not set up yet — add your Apps Script link in Settings.');
-  for (const prof of ['me', 'wife']) {
+  for (const prof of PROFS) {
     const pulled = await callScript({ key, action: 'pull', profile: prof });
     mergeProfile(P(prof), pulled.data);
     await callScript({ key, action: 'push', profile: prof, data: P(prof) });
@@ -982,7 +988,7 @@ function doPost(e) {
   try {
     const b = JSON.parse(e.postData.contents);
     if (b.key !== SECRET) return out({ ok: false, error: 'Wrong sync key' });
-    if (!/^(me|wife)$/.test(b.profile)) return out({ ok: false, error: 'Bad profile' });
+    if (!/^(me|wife|parents)$/.test(b.profile)) return out({ ok: false, error: 'Bad profile' });
     const folder = getFolder();
     const name = 'bwledger_' + b.profile + '.json';
     const it = folder.getFilesByName(name);
@@ -1335,7 +1341,7 @@ function txnsPanel(profKey) {
   </div>
   <div class="flex small" style="margin-bottom:10px"><span class="pill">${arr.length} entries</span><span class="pill red">Spent ${rs(T.exp)}</span><span class="pill grn">Income ${rs(T.inc)}</span><span class="pill">Transfers ${rs(arr.filter(t => catType(t.cat) === 'xfer').reduce((s, t) => s + t.amount, 0))}</span><span class="sp"></span><button class="btn sm" data-act="exportCsv" data-prof="${profKey}">⬇ CSV</button></div>
   ${arr.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Payee / details</th><th>Account</th><th>Category</th><th>UPI app / mode</th><th class="ra">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>${arr.length > lim ? `<div class="mt" style="text-align:center"><button class="btn" data-act="more" data-prof="${profKey}">Show more (${arr.length - lim} left)</button></div>` : ''}`
-    : `<div class="card">${emptyBox('💰', 'No entries yet', 'Import a bank statement or add an entry by hand.', `<button class="btn pri sm" data-act="subTab" data-base="${profKey === 'wife' ? 'wife' : 'money'}" data-sub="import">⬆ Import statement</button>`)}</div>`}`;
+    : `<div class="card">${emptyBox('💰', 'No entries yet', 'Import a bank statement or add an entry by hand.', `<button class="btn pri sm" data-act="subTab" data-base="${profKey === 'me' ? 'money' : profKey}" data-sub="import">⬆ Import statement</button>`)}</div>`}`;
 }
 function reviewPanel(profKey) {
   const arr = live(P(profKey).txns).filter(needsReview).sort((a, b) => b.date.localeCompare(a.date));
@@ -1373,7 +1379,7 @@ function rulesPanel(profKey) {
 
 /* ---------- Import ---------- */
 function importPanel(profKey) {
-  return `<div class="grid g21"><div class="card"><h3>⬆ Import a bank statement ${profKey === 'wife' ? '<small>into ' + esc(wifeName()) + '’s section</small>' : ''}</h3>
+  return `<div class="grid g21"><div class="card"><h3>⬆ Import a bank statement ${profKey === 'wife' ? '<small>into ' + esc(wifeName()) + '’s section</small>' : profKey === 'parents' ? '<small>into Papa’s account section</small>' : ''}</h3>
   <p class="muted" style="margin-top:0">PDF (Kotak old & new formats tested), CSV or Excel. The file is read <b>only on this device</b> — nothing is uploaded.</p>
   <div class="frow"><div class="fld"><label>Statement file</label><input class="inp" type="file" id="imp_file" accept=".pdf,.csv,.xlsx,.xls,.txt"></div><div class="fld"><label>PDF password (if any)</label><input class="inp" id="imp_pw" type="password" autocomplete="off" placeholder="Leave empty if none"></div></div>
   <button class="btn pri" data-act="readStatement" data-prof="${profKey}">Read statement</button>
@@ -1410,7 +1416,7 @@ function parseTable(name, buf) {
   if (hi < 0) throw new Error('Could not find the header row (Date / Narration / Debit / Credit / Balance) in this file.');
   const H = rows[hi].map(c => String(c).trim().toLowerCase());
   const idx = re => H.findIndex(h => re.test(h));
-  const ci = { date: idx(/^(txn |transaction |value |post )?date/), narr: idx(/narration|description|particulars|details|remarks/), ref: idx(/chq|cheque|ref/), dr: idx(/withdrawal|debit/), cr: idx(/deposit|credit/), amt: idx(/^amount/), drcr: idx(/^(dr|cr|dr\/cr|type)$/), bal: idx(/balance/) };
+  const ci = { date: idx(/^(txn |transaction |value |post )?date/), narr: idx(/narration|description|particulars|details|remarks/), ref: idx(/chq|cheque|ref/), dr: idx(/withdrawal|debit|^dr\b|^dr\.?\s*am/), cr: idx(/deposit|credit|^cr\b|^cr\.?\s*am/), amt: idx(/^amount/), drcr: idx(/^(dr|cr|dr\/cr|type)$/), bal: idx(/balance/) };
   const txns = []; const warnings = [];
   rows.slice(hi + 1).forEach(r => {
     const date = StmtParser.parseDate(String(r[ci.date] || '').trim().replace(/\s+\d{1,2}:\d{2}.*$/, ''));
@@ -1469,7 +1475,7 @@ function doImport(link) {
   const existing = new Set(live(prof.txns).map(dedupeKey));
   const batch = uid(), added = [];
   I.rows.filter(r => r.sel).forEach(r => {
-    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
+    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
     if (t.remark && /HOME\s*EXPE|HOME\s*RENT/i.test(t.remark)) t.note = /RENT/i.test(t.remark) ? 'Home rent' : 'Home expense';
     const k = dedupeKey(t); if (existing.has(k)) return; existing.add(k);
     prof.txns.push(t); added.push(t);
@@ -1481,7 +1487,7 @@ function doImport(link) {
   const rv = added.filter(needsReview).length;
   toast(`Imported ${added.length} entries${linked ? ' · ' + linked + ' bill payments matched' : ''}${rv ? ' · ' + rv + ' to review' : ''}`, 4000);
   IMPORT = null;
-  if (I.profKey === 'wife') VIEW.sub.wife = rv ? 'review' : 'txns'; else VIEW.sub.money = rv ? 'review' : 'txns';
+  VIEW.sub[I.profKey === 'me' ? 'money' : I.profKey] = rv ? 'review' : 'txns';
   render();
 }
 function addFriendEntryFromTxn(f, t, type) {
@@ -2507,7 +2513,7 @@ function reportModal() {
 /* ================= actions ================= */
 const FACT = {
   drill: el => {
-    const prof = el.dataset.prof || 'me', base = prof === 'wife' ? 'wife' : 'money';
+    const prof = el.dataset.prof || 'me', base = prof === 'me' ? 'money' : prof;
     VIEW.sub['f_' + prof] = { q: '', m: '', acc: '', cat: el.dataset.cat || '', app: '', ty: el.dataset.cat || el.dataset.for ? '' : 'exp', from: el.dataset.from, to: el.dataset.to, forWho: el.dataset.for || '' };
     VIEW.tab = base; VIEW.sub[base] = 'txns'; render(); window.scrollTo(0, 0);
   },
@@ -2543,7 +2549,7 @@ document.addEventListener('change', e => {
 const parName = () => S.settings.parentsName || 'Parents';
 const isForParents = t => t.dir === 'dr' && (t.for === 'parents' || t.cat === 'parents');
 function parentsTx(from, to) { return txIn('me', from, to).filter(isForParents); }
-VIEWS.parents = () => {
+function parentsOverview() {
   const td = today(), per = VIEW.sub.pPer || '12m';
   let from, to, lab;
   if (per === 'month') { const k = VIEW.sub.pMonth || latestDataMonth(['me']); [from, to] = monthRange(k); lab = ymLabel(k); }
@@ -2562,18 +2568,20 @@ VIEWS.parents = () => {
   const stacks = groups.map(([c, n, col]) => ({ name: n, color: col, values: l12.map(k => parentsTx(...monthRange(k)).filter(t => t.cat === c).reduce((s, t) => s + t.amount, 0)) }));
   stacks.push({ name: 'Other', color: '#64748b', values: l12.map(k => parentsTx(...monthRange(k)).filter(t => !groups.some(g => g[0] === t.cat)).reduce((s, t) => s + t.amount, 0)) });
   const setup = !S.settings.parentsMatch && !pBills.length && !tx.length;
+  const loanDue = live(P('parents').loans || []).map(l => ({ l, d: loanCalc(l).next })).filter(x => x.d && x.d <= addDays(td, 60));
   return `<div class="flex" style="margin-bottom:14px"><div class="seg">${[['month', 'Month'], ['12m', '12 months'], ['fy', 'This FY'], ['all', 'All time']].map(([k, l]) => `<button class="${per === k ? 'on' : ''}" data-act="pPer" data-p="${k}">${l}</button>`).join('')}</div>
   ${per === 'month' ? `<select class="inp" style="width:auto" data-act="pMonth">${monthsWithData(['me']).map(k => `<option value="${k}" ${ym(from) === k ? 'selected' : ''}>${ymLabel(k)}</option>`).join('')}</select>` : ''}<span class="sp" style="flex:1"></span>
   <button class="btn" data-act="parentsSetup">⚙️ Names in bank</button><button class="btn pri" data-act="parentsBill">＋ Bill for ${esc(parName())}</button></div>
   ${setup ? `<div class="alert vio">👪 <div><b>Set this up in 3 quick steps:</b><br>1. Tap <b>⚙️ Names in bank</b> and type your parents' names as they appear on your bank transfers, so money you send them is picked up automatically.<br>2. Add their gas, electricity, phone and DTH as bills with <b>Paid for: ${esc(parName())}</b> (button above). Payments matching those bills are tagged automatically.<br>3. For anything else (e.g. a one-off recharge), open the entry in Money and tick <b>👪 Paid for ${esc(parName())}</b>.</div></div>` : ''}
   <div class="grid g4">${kpi('👪 Total for ' + esc(parName()), rs(sent + billsAmt), esc(lab), 'gold')}${kpi('💸 Money sent', rs(sent), tx.filter(t => t.cat === 'parents').length + ' transfers', 'vio')}${kpi('🧾 Bills & recharges', rs(billsAmt), 'Gas, electricity, phone, DTH…', 'acc')}${kpi('📆 Average per month', rs((sent + billsAmt) / nMonths), nMonths + ' month' + (nMonths === 1 ? '' : 's') + ' with payments', 'grn')}</div>
-  <div class="grid g21 mt"><div class="card"><h3>📊 Month by month <small>12 months</small></h3>${stackedBars(l12.map(ymLabel), stacks)}</div>
+  ${papaCard()}
+  <div class="grid g21 mt"><div class="card"><h3>📊 Month by month <small>12 months</small></h3>${stacks.some(st => st.values.some(Boolean)) ? stackedBars(l12.map(ymLabel), stacks) : emptyBox('📊', 'Nothing tagged yet', 'Payments you make for them will show here month by month.')}</div>
   <div class="card"><h3>🍩 What it goes on</h3>${donut(cats, 'For ' + parName(), sent + billsAmt)}</div></div>
-  <div class="grid g2 mt"><div class="card"><h3>📅 Coming up for ${esc(parName())} <small>next 60 days</small></h3><div class="list">${due.map(x => billRow(x.b, 'me', x.d)).join('') || emptyBox('🧾', 'No bills for ' + esc(parName()) + ' yet', 'Add their gas, electricity, phone and DTH.', `<button class="btn sm pri" data-act="parentsBill">＋ Add a bill</button>`)}</div></div>
+  <div class="grid g2 mt"><div class="card"><h3>📅 Coming up for ${esc(parName())} <small>next 60 days</small></h3><div class="list">${loanDue.map(x => `<div class="row"><div class="ico">🚗</div><div class="mid"><div class="t1">${esc(x.l.name)} EMI <span class="pill vio">Papa's account</span></div><div class="t2">${fmtDate(x.d)} · auto-debit from ${esc(accName('parents', x.l.account))}</div></div><div class="r num b">${rs(x.l.emi)}</div></div>`).join('')}${due.map(x => billRow(x.b, 'me', x.d)).join('') || (loanDue.length ? '' : emptyBox('🧾', 'No bills for ' + esc(parName()) + ' yet', 'Add their gas, electricity, phone and DTH.', `<button class="btn sm pri" data-act="parentsBill">＋ Add a bill</button>`))}</div></div>
   <div class="card"><h3>🧾 Their bills & recharges</h3><div class="list">${pBills.map(b => `<div class="row" style="cursor:pointer" data-act="editBill" data-id="${b.id}"><div class="ico">${catIcon(b.cat)}</div><div class="mid"><div class="t1">${esc(b.name)}</div><div class="t2">${CYCLES[b.cycle]} · next ${fmtDate(b.nextDue)}${b.consumerNo ? ' · ' + esc(b.consumerNo) : ''}</div></div><div class="r num b">${rs(b.amount)}</div></div>`).join('') || '<div class="muted small">None yet.</div>'}</div></div></div>
   <div class="card mt"><h3>📜 Payments for ${esc(parName())} <small>${esc(lab)}</small><span class="sp"></span>${tx.length ? `<button class="btn sm ghost" data-act="drill" data-prof="me" data-for="parents" data-from="${from}" data-to="${to}">Open in Money →</button>` : ''}</h3>
   ${tx.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Paid to</th><th>Category</th><th>From account</th><th class="ra">Amount</th></tr></thead><tbody>${tx.slice(0, 60).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td class="num">${fmtDate(t.date)}</td><td><b>${esc(t.payee || t.desc)}</b><div class="muted small">${esc(t.note || t.remark || '')}</div></td><td>${catPill(t.cat)}</td><td class="small">${esc(accName('me', t.account))}</td><td class="ra num b">${rs(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No payments tagged for ' + esc(parName()) + ' in this period yet.</div>'}</div>`;
-};
+}
 function parentsSetupModal() {
   modal('👪 ' + esc(parName()) + ' — names in bank', `<div class="frow"><div class="fld"><label>Show this section as</label><input class="inp" id="ps_n" value="${esc(parName())}" placeholder="Parents / Mummy-Papa"></div></div>
   <div class="fld"><label>Their names as they appear in your bank transfers (comma separated)</label><input class="inp" id="ps_m" value="${esc(S.settings.parentsMatch || '')}" placeholder="e.g. THAKURLAL BAGHEL, (mother's name)"></div>
@@ -2599,6 +2607,129 @@ VIEWS.dashboard = () => {
   const row = `<div class="row" style="margin-top:6px"><div class="ico">👪</div><div class="mid"><div class="t1">${esc(parName())}</div><div class="t2">${ymLabel(k)}: ${rs(amt)} paid for them</div></div><button class="btn sm ghost" data-act="go" data-tab="parents">Open</button></div>`;
   return _dash().replace('<div class="row" style="margin-top:6px"><div class="ico">🤝</div>', row + '<div class="row" style="margin-top:6px"><div class="ico">🤝</div>');
 };
+
+/* ---------- Mom & Dad, Papa's account, car loan ---------- */
+const OPERATORS = ['Jio', 'Airtel', 'Vi', 'BSNL', 'MTNL', 'Other'];
+const LINKS = ['Bank account', 'Pension', 'Gas', 'DTH', 'Electricity', 'Aadhaar', 'PAN', 'UPI', 'WhatsApp', 'Insurance', 'Car loan', 'Other'];
+const LINK_ICON = { 'Bank account': '🏦', Pension: '🧓', Gas: '🔥', DTH: '📺', Electricity: '💡', Aadhaar: '🪪', PAN: '🧾', UPI: '📲', WhatsApp: '💬', Insurance: '🛡️', 'Car loan': '🚗', Other: '📌' };
+const members = () => live(P('parents').members || []);
+const fmtPhone = n => { const d = String(n || '').replace(/\D/g, ''); return d.length === 10 ? d.slice(0, 5) + ' ' + d.slice(5) : (n || ''); };
+function loanCalc(l) {
+  const td = today(); let k = 0, next = null;
+  if (l.firstEmi) { while (k < (l.tenure || 600)) { const d = addCycle(l.firstEmi, 'monthly', k); if (d > td) { next = d; break; } k++; } }
+  const sched = Math.min(k, l.tenure || k);
+  const found = live(P('parents').txns).filter(t => t.dir === 'dr' && (t.loanId === l.id || (l.match && compact(t.desc).includes(compact(l.match))))).sort((a, b) => b.date.localeCompare(a.date));
+  const left = l.tenure ? Math.max(0, l.tenure - sched) : null;
+  const end = l.firstEmi && l.tenure ? addCycle(l.firstEmi, 'monthly', l.tenure - 1) : null;
+  let outstanding = null;
+  if (l.principal && l.rate) { const r = l.rate / 1200, P0 = +l.principal; outstanding = Math.max(0, P0 * Math.pow(1 + r, sched) - l.emi * (Math.pow(1 + r, sched) - 1) / r); }
+  else if (left != null) outstanding = left * l.emi;
+  return { sched, found, left, end, next: left === 0 ? null : next, outstanding, pct: l.tenure ? sched / l.tenure : 0 };
+}
+function papaCard() {
+  const acc = P('parents').accounts.filter(a => !a.deleted && a.status !== 'closed');
+  const tx = live(P('parents').txns);
+  const pen = tx.filter(t => t.cat === 'pension' && t.dir === 'cr').sort((a, b) => b.date.localeCompare(a.date));
+  const bal = acc.map(a => accountBalance('parents', a.id)).filter(Boolean).reduce((s, b) => s + b.bal, 0);
+  const loans = live(P('parents').loans || []);
+  if (!tx.length && !loans.length) return `<div class="alert vio mt">🏦 <div><b>Papa's PNB pension account</b> — import his statement to track pension credits, the car-loan EMI and the balance.</div><span class="sp"></span><button class="btn sm pri" data-act="subTab" data-base="parents" data-sub="import">⬆ Import his statement</button></div>`;
+  const l12 = lastMonths(latestDataMonth(['parents']), 12);
+  return `<div class="grid g4 mt">${kpi('🧓 Last pension', pen[0] ? rs(pen[0].amount) : '—', pen[0] ? fmtDate(pen[0].date) : 'No pension credit found yet', 'grn')}${kpi('🏦 Balance (PNB)', bal ? rs(bal) : '—', 'From latest statement', 'blu')}${loans.map(l => { const c = loanCalc(l); return kpi('🚗 ' + esc(l.name), rs(l.emi) + '/mo', c.left != null ? c.left + ' EMIs left' + (c.next ? ' · next ' + fmtDateShort(c.next) : '') : '', 'vio'); }).join('')}${loans.length < 2 ? kpi('📥 Money from you', rs(tx.filter(t => t.cat === 'fromson').reduce((s, t) => s + t.amount, 0)), 'Received in his account', 'gold') : ''}</div>
+  ${pen.length ? `<div class="card mt"><h3>🧓 Pension credits <small>12 months</small></h3>${barChart(l12.map(ymLabel), [{ name: 'Pension', color: '#34e89e', values: l12.map(k => txIn('parents', ...monthRange(k)).filter(t => t.cat === 'pension').reduce((s, t) => s + t.amount, 0)) }, { name: 'Spent from his account', color: '#ff7ab6', values: l12.map(k => totals(txIn('parents', ...monthRange(k))).exp) }])}</div>` : ''}`;
+}
+function familyView() {
+  const ms = members();
+  const rev = []; ms.forEach(m => (m.phones || []).forEach(p => (p.linked || []).forEach(l => rev.push({ l, p, m }))));
+  rev.sort((a, b) => LINKS.indexOf(a.l) - LINKS.indexOf(b.l));
+  const now = today();
+  return `<div class="flex" style="margin-bottom:14px"><span class="muted small" style="flex:1">Keep every mobile number and what it's linked to in one place — handy when an OTP goes to the wrong phone.</span><button class="btn" data-act="memberEdit">＋ Person</button></div>
+  <div class="grid g2">${ms.map(m => `<div class="card"><h3><span style="font-size:26px">${m.role === 'dad' ? '👨' : m.role === 'mom' ? '👩' : '🧑'}</span><span style="font-size:17px">${esc(m.name)}</span><span class="sp"></span><button class="btn sm ghost" data-act="memberEdit" data-id="${m.id}">Edit</button><button class="btn sm pri" data-act="phoneEdit" data-m="${m.id}">＋ Number</button></h3>
+    ${m.notes ? `<div class="small muted" style="margin:-4px 0 10px">${esc(m.notes)}</div>` : ''}
+    <div class="list">${(m.phones || []).map(p => { const exp = p.validTill ? daysBetween(now, p.validTill) : null; return `<div class="row" style="cursor:pointer;align-items:flex-start" data-act="phoneEdit" data-m="${m.id}" data-id="${p.id}"><div class="ico">📱</div><div class="mid"><div class="t1"><a href="tel:${esc(String(p.number).replace(/\s/g, ''))}" style="color:inherit;text-decoration:none">${esc(fmtPhone(p.number))}</a> <span class="pill">${esc(p.operator || '')}${p.type ? ' · ' + esc(p.type) : ''}</span>${exp != null ? ` <span class="pill ${exp < 0 ? 'red pulse' : exp <= 5 ? 'amb' : 'grn'}">${exp < 0 ? 'Expired' : 'Valid till ' + fmtDateShort(p.validTill)}</span>` : ''}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${(p.linked || []).map(l => `<span class="pill vio">${LINK_ICON[l] || '📌'} ${esc(l)}</span>`).join('') || '<span class="muted small">Not linked to anything yet</span>'}</div>${p.details ? `<div class="t2" style="white-space:normal;margin-top:5px">${esc(p.details)}</div>` : ''}</div>${p.rechargeAmt ? `<div class="r num b">${rs(p.rechargeAmt)}</div>` : ''}</div>`; }).join('') || emptyBox('📱', 'No numbers yet', 'Add each mobile number and tick what it is linked to (bank, gas, DTH, Aadhaar…).')}</div></div>`).join('')}</div>
+  <div class="card mt"><h3>🔗 Which number is linked where</h3>${rev.length ? `<div class="tblw"><table class="t"><thead><tr><th>Linked to</th><th>Number</th><th>Whose</th><th>Details</th></tr></thead><tbody>${rev.map(x => `<tr><td><b>${LINK_ICON[x.l] || '📌'} ${esc(x.l)}</b></td><td class="num">${esc(fmtPhone(x.p.number))}</td><td>${esc(x.m.name)}</td><td class="small muted">${esc(x.p.details || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Tick “linked to” on each number to build this list.</div>'}</div>`;
+}
+function loanView() {
+  const loans = live(P('parents').loans || []);
+  return `<div class="flex" style="margin-bottom:14px"><span class="muted small" style="flex:1">EMIs debited from Papa's account are picked up from his statement using the “word in statement”.</span><button class="btn pri" data-act="loanEdit">＋ Loan</button></div>
+  ${loans.length ? loans.map(l => { const c = loanCalc(l), bal = l.account ? accountBalance('parents', l.account) : null, low = bal && c.next && bal.bal < l.emi;
+    return `${low ? `<div class="alert red">⚠️ <div>Papa's account balance ${rs(bal.bal)} (${fmtDate(bal.date)}) is lower than the next EMI of ${rs(l.emi)} on ${fmtDate(c.next)}. A bounced EMI means penalty charges — top it up.</div></div>` : ''}
+    <div class="grid g21"><div class="card"><h3>🚗 ${esc(l.name)} <small>${esc(l.lender || '')}</small><span class="sp"></span><button class="btn sm ghost" data-act="loanEdit" data-id="${l.id}">Edit</button></h3>
+    <div class="grid g4" style="gap:10px">${kpi('💳 EMI', rs(l.emi), 'on day ' + (l.firstEmi ? +l.firstEmi.slice(8) : '—') + ' each month', 'vio')}${kpi('📆 EMIs left', c.left ?? '—', c.end ? 'last EMI ' + fmtDate(c.end) : 'add tenure', 'gold')}${kpi('⏭️ Next EMI', c.next ? fmtDateShort(c.next) : 'Done', c.next ? 'in ' + daysBetween(today(), c.next) + ' days' : '', 'acc')}${kpi('💰 Outstanding', c.outstanding != null ? rs(c.outstanding) : '—', l.principal && l.rate ? 'estimated principal' : 'remaining EMIs total', 'red')}</div>
+    <div class="mt"><div class="flex small"><b>${c.sched} of ${l.tenure || '?'} EMIs paid</b><span class="sp"></span><span class="muted">${Math.round(c.pct * 100)}%</span></div><div class="goal"><div class="gbar"><i class="hb" style="width:${c.pct * 100}%"></i></div></div></div>
+    ${l.notes ? `<div class="small muted">${esc(l.notes)}</div>` : ''}</div>
+    <div class="card"><h3>🧾 EMIs seen in statement <small>${c.found.length}</small></h3><div class="list">${c.found.slice(0, 8).map(t => `<div class="row"><div class="ico">✅</div><div class="mid"><div class="t1">${fmtDate(t.date)}</div><div class="t2">${esc(t.desc)}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') || `<div class="muted small">None yet. Import Papa's PNB statement${l.match ? '' : ' and set the “word in statement” for this loan'}.</div>`}</div></div></div>`; }).join('<div style="height:16px"></div>')
+    : `<div class="card">${emptyBox('🚗', 'Add the car loan', 'Enter the EMI amount, first EMI date and tenure. With the loan amount and interest rate, the outstanding balance is worked out too.', `<button class="btn pri sm" data-act="loanEdit">＋ Add car loan</button>`)}</div>`}`;
+}
+VIEWS.parents = () => {
+  const sub = VIEW.sub.parents || 'overview';
+  const rv = live(P('parents').txns).filter(needsReview).length;
+  const tabs = [['overview', '📊 Overview'], ['family', '👨‍👩 Mom & Dad'], ['loan', '🚗 Car loan'], ['txns', "🏦 Papa's account"], ['review', 'Review' + (rv ? ` (${rv})` : '')], ['import', '⬆ Import statement'], ['add', '＋ Add entry']];
+  const head = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${sub === k ? 'on' : ''}" data-act="subTab" data-base="parents" data-sub="${k}">${l}</button>`).join('')}</div>`;
+  if (sub === 'overview') return head + parentsOverview();
+  if (sub === 'family') return head + familyView();
+  if (sub === 'loan') return head + loanView();
+  return head + (sub === 'txns' ? `<div class="flex small muted" style="margin-bottom:10px">Accounts: ${P('parents').accounts.filter(a => !a.deleted).map(a => esc(a.name)).join(', ')} · <a href="#" data-act="editAcc" data-prof="parents">＋ add account</a></div>` : '') + moneyPanel('parents', sub);
+};
+function memberModal(id) {
+  const m = id ? P('parents').members.find(x => x.id === id) : null;
+  modal(m ? 'Edit ' + esc(m.name) : 'Add person', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="mm_n" value="${esc(m ? m.name : '')}" placeholder="e.g. Papa, Mummy"></div><div class="fld"><label>Who</label><select class="inp" id="mm_r"><option value="dad" ${m?.role === 'dad' ? 'selected' : ''}>👨 Dad</option><option value="mom" ${m?.role === 'mom' ? 'selected' : ''}>👩 Mom</option><option value="other" ${m && !['dad', 'mom'].includes(m.role) ? 'selected' : ''}>🧑 Other</option></select></div></div>
+  <div class="fld"><label>Notes (optional)</label><input class="inp" id="mm_no" value="${esc(m?.notes || '')}" placeholder="e.g. pension PPO no., gas consumer no."></div>`,
+    `${m ? '<button class="btn dan" id="mm_d">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="mm_s">Save</button>`, {
+    onMount: el => {
+      $('#mm_s', el).onclick = () => { const v = { name: $('#mm_n', el).value.trim(), role: $('#mm_r', el).value, notes: $('#mm_no', el).value.trim() }; if (!v.name) { toast('Enter a name'); return; } if (m) { Object.assign(m, v); touch(m); } else P('parents').members.push(touch({ id: uid(), phones: [], ...v })); save(); closeModal(); rerender(); };
+      if (m) $('#mm_d', el).onclick = () => confirmBox('Delete ' + esc(m.name) + '?', 'Their saved numbers will be removed too.', 'Delete', () => { removeRec(P('parents').members, m.id); save(); rerender(); }, true);
+    }
+  });
+}
+function phoneModal(mid, pid) {
+  const m = P('parents').members.find(x => x.id === mid); if (!m) return;
+  const p = pid ? (m.phones || []).find(x => x.id === pid) : null;
+  const d = p || { number: '', operator: 'Jio', type: 'Prepaid', linked: [], details: '', rechargeAmt: '', validTill: '' };
+  modal((p ? 'Edit number' : 'Add number') + ' — ' + esc(m.name), `<div class="frow"><div class="fld"><label>Mobile number</label><input class="inp" id="ph_n" inputmode="tel" value="${esc(d.number)}" placeholder="10-digit number"></div><div class="fld"><label>Operator</label><select class="inp" id="ph_o">${OPERATORS.map(o => `<option ${o === d.operator ? 'selected' : ''}>${o}</option>`).join('')}</select></div><div class="fld"><label>Plan</label><select class="inp" id="ph_t">${['Prepaid', 'Postpaid'].map(o => `<option ${o === d.type ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div>
+  <div class="fld" style="margin-bottom:12px"><label>Linked to</label><div style="display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:4px">${LINKS.map(l => `<label class="chk"><input type="checkbox" data-ln="${l}" ${(d.linked || []).includes(l) ? 'checked' : ''}> ${LINK_ICON[l]} ${l}</label>`).join('')}</div></div>
+  <div class="fld" style="margin-bottom:12px"><label>Details</label><input class="inp" id="ph_d" value="${esc(d.details)}" placeholder="e.g. PNB pension a/c, Bharat Gas consumer no. 123, Tata Play ID…"></div>
+  <div class="frow"><div class="fld"><label>Recharge amount (₹)</label><input class="inp" id="ph_a" type="number" inputmode="decimal" value="${esc(d.rechargeAmt)}"></div><div class="fld"><label>Valid till</label><input class="inp" id="ph_v" type="date" value="${esc(d.validTill)}"></div><div class="fld"><label>Pack length</label><select class="inp" id="ph_c"><option value="monthly">~1 month (28/30 days)</option><option value="quarterly">~3 months (84/90 days)</option><option value="yearly">1 year</option></select></div></div>
+  ${p && p.billId ? '<div class="small muted">A recharge reminder for this number is in Bills (marked for Parents).</div>' : `<label class="chk"><input type="checkbox" id="ph_b" ${d.rechargeAmt || !p ? 'checked' : ''}> Add a recharge reminder (shows in Upcoming & Parents, tagged for ${esc(parName())})</label>`}`,
+    `${p ? '<button class="btn dan" id="ph_del">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ph_s">Save</button>`, {
+    onMount: el => {
+      $('#ph_s', el).onclick = () => {
+        const v = { number: $('#ph_n', el).value.trim(), operator: $('#ph_o', el).value, type: $('#ph_t', el).value, linked: $$('[data-ln]', el).filter(x => x.checked).map(x => x.dataset.ln), details: $('#ph_d', el).value.trim(), rechargeAmt: +$('#ph_a', el).value || 0, validTill: $('#ph_v', el).value };
+        if (!/\d{6,}/.test(v.number.replace(/\D/g, ''))) { toast('Enter the mobile number'); return; }
+        m.phones = m.phones || []; let ph = p; if (ph) Object.assign(ph, v); else { ph = { id: uid(), ...v }; m.phones.push(ph); }
+        if ($('#ph_b', el)?.checked && v.rechargeAmt && v.validTill) { const b = touch({ id: uid(), kind: 'bill', name: `${m.name} ${v.operator} recharge (${fmtPhone(v.number).slice(-5)})`, cat: 'phone', amount: v.rechargeAmt, cycle: $('#ph_c', el).value, nextDue: v.validTill, status: 'active', payments: [], priceLog: [], forWho: 'parents', method: 'UPI', match: '', notes: 'Number ' + v.number }); P('me').bills.push(b); ph.billId = b.id; }
+        else if (ph.billId) { const b = P('me').bills.find(x => x.id === ph.billId); if (b && !b.deleted) { if (v.rechargeAmt) b.amount = v.rechargeAmt; if (v.validTill) b.nextDue = v.validTill; touch(b); } }
+        touch(m); save(); closeModal(); rerender(); toast('Saved');
+      };
+      if (p) $('#ph_del', el).onclick = () => confirmBox('Delete this number?', '', 'Delete', () => { m.phones = m.phones.filter(x => x.id !== p.id); touch(m); save(); rerender(); }, true);
+    }
+  });
+}
+function loanModal(id) {
+  const l = id ? P('parents').loans.find(x => x.id === id) : null;
+  const d = l || { name: 'Car loan', lender: '', account: (P('parents').accounts.find(a => !a.deleted) || {}).id, emi: '', firstEmi: '', tenure: '', principal: '', rate: '', match: '', notes: '' };
+  modal(l ? 'Edit loan' : 'Add loan', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="lo_n" value="${esc(d.name)}"></div><div class="fld"><label>Lender</label><input class="inp" id="lo_l" value="${esc(d.lender)}" placeholder="e.g. PNB, Maruti Finance"></div><div class="fld"><label>Paid from</label><select class="inp" id="lo_a">${accOptions('parents', d.account)}</select></div></div>
+  <div class="frow"><div class="fld"><label>EMI (₹)</label><input class="inp" id="lo_e" type="number" inputmode="decimal" value="${esc(d.emi)}"></div><div class="fld"><label>First EMI date</label><input class="inp" id="lo_f" type="date" value="${esc(d.firstEmi)}"></div><div class="fld"><label>Tenure (months)</label><input class="inp" id="lo_t" type="number" value="${esc(d.tenure)}"></div></div>
+  <div class="frow"><div class="fld"><label>Loan amount (₹, optional)</label><input class="inp" id="lo_p" type="number" value="${esc(d.principal)}"></div><div class="fld"><label>Interest % a year (optional)</label><input class="inp" id="lo_r" type="number" step="0.01" value="${esc(d.rate)}"></div><div class="fld"><label>Word in statement</label><input class="inp" id="lo_m" value="${esc(d.match)}" placeholder="e.g. LOAN, EMI, CAR LN"></div></div>
+  <div class="fld"><label>Notes</label><input class="inp" id="lo_no" value="${esc(d.notes)}" placeholder="e.g. loan account no., car model"></div>`,
+    `${l ? '<button class="btn dan" id="lo_d">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="lo_s">Save</button>`, {
+    onMount: el => {
+      $('#lo_s', el).onclick = () => {
+        const v = { name: $('#lo_n', el).value.trim() || 'Loan', lender: $('#lo_l', el).value.trim(), account: $('#lo_a', el).value, emi: +$('#lo_e', el).value || 0, firstEmi: $('#lo_f', el).value, tenure: +$('#lo_t', el).value || 0, principal: +$('#lo_p', el).value || 0, rate: +$('#lo_r', el).value || 0, match: $('#lo_m', el).value.trim(), notes: $('#lo_no', el).value.trim() };
+        if (!v.emi || !v.firstEmi) { toast('Enter the EMI amount and first EMI date'); return; }
+        let x = l; if (x) { Object.assign(x, v); touch(x); } else { x = touch({ id: uid(), ...v }); P('parents').loans.push(x); }
+        if (x.match) live(P('parents').txns).forEach(t => { if (t.dir === 'dr' && compact(t.desc).includes(compact(x.match))) { t.cat = 'emi'; t.loanId = x.id; touch(t); } });
+        save(); closeModal(); rerender(); toast('Loan saved');
+      };
+      if (l) $('#lo_d', el).onclick = () => confirmBox('Delete this loan?', '', 'Delete', () => { removeRec(P('parents').loans, l.id); save(); rerender(); }, true);
+    }
+  });
+}
+Object.assign(PACT, {
+  memberEdit: el => memberModal(el.dataset.id),
+  phoneEdit: el => phoneModal(el.dataset.m, el.dataset.id),
+  loanEdit: el => loanModal(el.dataset.id),
+});
 
 /* ============ BlueWave Finance — events & boot ============ */
 const ACT = {
@@ -2633,7 +2764,7 @@ const ACT = {
   exportCsv: el => {
     const k = el.dataset.prof, rows = [['Date', 'Account', 'Payee', 'Narration', 'Ref', 'Mode', 'UPI app', 'Category', 'Debit', 'Credit', 'Balance', 'Note']];
     live(P(k).txns).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => rows.push([t.date, accName(k, t.account), t.payee, t.desc, t.ref, t.mode, t.app || '', catName(t.cat), t.dir === 'dr' ? t.amount : '', t.dir === 'cr' ? t.amount : '', t.balance ?? '', t.note || '']));
-    confirmBox('Export as CSV?', 'The CSV file is <b>not encrypted</b> — anyone who opens it can read it. Keep it somewhere safe.', 'Download CSV', () => download((k === 'wife' ? 'ankita' : 'ritesh') + '-transactions.csv', rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv'));
+    confirmBox('Export as CSV?', 'The CSV file is <b>not encrypted</b> — anyone who opens it can read it. Keep it somewhere safe.', 'Download CSV', () => download(({ me: 'ritesh', wife: 'ankita', parents: 'papa' }[k] || k) + '-transactions.csv', rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv'));
   },
   editTxn: el => txnModal(el.dataset.prof || 'me', el.dataset.id),
   reviewSave: el => {
@@ -2700,7 +2831,7 @@ const CHANGE = {
   restore: async el => {
     const f = el.files[0]; if (!f) return;
     let j; try { j = JSON.parse(await f.text()); } catch (e) { toast('Not a backup file'); return; }
-    const apply = data => { mergeProfile(P('me'), data.profiles.me); mergeProfile(P('wife'), data.profiles.wife); save(); render(); toast('Backup restored and merged'); };
+    const apply = data => { PROFS.forEach(k => { if (data.profiles[k]) mergeProfile(P(k), data.profiles[k]); }); save(); render(); toast('Backup restored and merged'); };
     if (j.plain) { apply(j.data); return; }
     modal('Restore backup', `<div class="fld"><label>PIN used when this backup was made</label><input class="inp" id="rp" type="password" inputmode="numeric"></div>`, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="rgo">Restore</button>`, {
       onMount: m => $('#rgo', m).onclick = async () => { try { const k = await deriveKey($('#rp', m).value, b64.dec(j.salt)); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.dec(j.iv) }, k, b64.dec(j.ct)); closeModal(); apply(JSON.parse(new TextDecoder().decode(pt))); } catch (e) { toast('Wrong PIN for this backup'); } }
