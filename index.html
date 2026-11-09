@@ -874,7 +874,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.4';
+const APP_VER = '3.5';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1025,8 +1025,8 @@ function seedState() {
     profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('ABB'), parents: EMPTY_PROFILE('Parents') },
   };
   s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('Cash', 'Cash', 'Cash wallet')];
-  s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Papa PNB (pension)')];
-  s.profiles.parents.members = [{ id: uid(), role: 'dad', name: 'Papa', phones: [], notes: '', updatedAt: t }, { id: uid(), role: 'mom', name: 'Mummy', phones: [], notes: '', updatedAt: t }];
+  s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Dad PNB (pension)')];
+  s.profiles.parents.members = [{ id: uid(), role: 'dad', name: 'Dad', phones: [], notes: '', updatedAt: t }, { id: uid(), role: 'mom', name: 'Mom', phones: [], notes: '', updatedAt: t }];
   s.profiles.wife.accounts = [acc('SBI', 'Savings', 'ABB SBI'), acc('Axis', 'Savings', 'ABB Axis', { status: 'closed' }), acc('Cash', 'Cash', 'ABB cash')];
   return s;
 }
@@ -1074,6 +1074,12 @@ async function unlockVault(pin) {
   } catch (e) { return false; }
 }
 function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); PROFS.forEach(k => { const fresh = !S.profiles[k]; S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k] || d.profiles[k]); if (fresh) S.profiles[k].updatedAt = nowIso(); });
+  if (!S.settings.momDadV) { S.settings.momDadV = 1; const pr = S.profiles.parents;
+    (pr.accounts || []).forEach(a => { if (/^papa\b/i.test(a.name || '')) { a.name = a.name.replace(/^papa/i, 'Dad'); touch(a); } });
+    (pr.members || []).forEach(m => { if (/^papa$/i.test(m.name || '')) { m.name = 'Dad'; touch(m); } else if (/^mummy$/i.test(m.name || '')) { m.name = 'Mom'; touch(m); } });
+    if (/mummy|papa/i.test(pr.name || '')) pr.name = 'Mom & Dad';
+    if (/mummy|papa/i.test(S.settings.parentsName || '')) S.settings.parentsName = 'Mom & Dad';
+  }
   if (!S.settings.abbV) { S.settings.abbV = 1;
     if (!S.settings.wifeName || /^ankita/i.test(S.settings.wifeName)) S.settings.wifeName = 'ABB';
     const w = S.profiles.wife; if (/^ankita/i.test(w.name || '')) w.name = 'ABB';
@@ -1714,7 +1720,7 @@ function rulesPanel(profKey) {
 
 /* ---------- Import ---------- */
 function importPanel(profKey) {
-  return `<div class="grid g21"><div class="card"><h3>⬆ Import a bank statement ${profKey === 'wife' ? '<small>into ' + esc(wifeName()) + '’s section</small>' : profKey === 'parents' ? '<small>into Papa’s account section</small>' : ''}</h3>
+  return `<div class="grid g21"><div class="card"><h3>⬆ Import a bank statement ${profKey === 'wife' ? '<small>into ' + esc(wifeName()) + '’s section</small>' : profKey === 'parents' ? '<small>into Dad’s account section</small>' : ''}</h3>
   <p class="muted" style="margin-top:0">PDF (Kotak old & new formats tested), CSV or Excel. The file is read <b>only on this device</b> — nothing is uploaded.</p>
   <div class="frow"><div class="fld"><label>Statement file(s) — you can pick several</label><input class="inp" type="file" id="imp_file" multiple accept=".pdf,.csv,.xlsx,.xls,.txt"></div><div class="fld"><label>PDF password (if any)</label><input class="inp" id="imp_pw" type="password" autocomplete="off" placeholder="Leave empty if none"></div></div>
   <button class="btn pri" data-act="readStatement" data-prof="${profKey}">Read statement(s)</button>
@@ -2943,13 +2949,13 @@ function parentsOverview() {
   ${papaCard()}
   <div class="grid g21 mt"><div class="card"><h3>📊 Month by month <small>12 months</small></h3>${stacks.some(st => st.values.some(Boolean)) ? stackedBars(l12.map(ymLabel), stacks) : emptyBox('📊', 'Nothing tagged yet', 'Payments you make for them will show here month by month.')}</div>
   <div class="card"><h3>🍩 What it goes on</h3>${donut(cats, 'For ' + parName(), sent + billsAmt)}</div></div>
-  <div class="grid g2 mt"><div class="card"><h3>📅 Coming up for ${esc(parName())} <small>next 60 days</small></h3><div class="list">${loanDue.map(x => `<div class="row"><div class="ico">🚗</div><div class="mid"><div class="t1">${esc(x.l.name)} EMI <span class="pill vio">Papa's account</span></div><div class="t2">${fmtDate(x.d)} · auto-debit from ${esc(accName('parents', x.l.account))}</div></div><div class="r num b">${rs(x.l.emi)}</div></div>`).join('')}${due.map(x => billRow(x.b, 'me', x.d)).join('') || (loanDue.length ? '' : emptyBox('🧾', 'No bills for ' + esc(parName()) + ' yet', 'Add their gas, electricity, phone and DTH.', `<button class="btn sm pri" data-act="parentsBill">＋ Add a bill</button>`))}</div></div>
+  <div class="grid g2 mt"><div class="card"><h3>📅 Coming up for ${esc(parName())} <small>next 60 days</small></h3><div class="list">${loanDue.map(x => `<div class="row"><div class="ico">🚗</div><div class="mid"><div class="t1">${esc(x.l.name)} EMI <span class="pill vio">Dad's account</span></div><div class="t2">${fmtDate(x.d)} · auto-debit from ${esc(accName('parents', x.l.account))}</div></div><div class="r num b">${rs(x.l.emi)}</div></div>`).join('')}${due.map(x => billRow(x.b, 'me', x.d)).join('') || (loanDue.length ? '' : emptyBox('🧾', 'No bills for ' + esc(parName()) + ' yet', 'Add their gas, electricity, phone and DTH.', `<button class="btn sm pri" data-act="parentsBill">＋ Add a bill</button>`))}</div></div>
   <div class="card"><h3>🧾 Their bills & recharges</h3><div class="list">${pBills.map(b => `<div class="row" style="cursor:pointer" data-act="editBill" data-id="${b.id}"><div class="ico">${catIcon(b.cat)}</div><div class="mid"><div class="t1">${esc(b.name)}</div><div class="t2">${CYCLES[b.cycle]} · next ${fmtDate(b.nextDue)}${b.consumerNo ? ' · ' + esc(b.consumerNo) : ''}</div></div><div class="r num b">${rs(b.amount)}</div></div>`).join('') || '<div class="muted small">None yet.</div>'}</div></div></div>
   <div class="card mt"><h3>📜 Payments for ${esc(parName())} <small>${esc(lab)}</small><span class="sp"></span>${tx.length ? `<button class="btn sm ghost" data-act="drill" data-prof="me" data-for="parents" data-from="${from}" data-to="${to}">Open in Money →</button>` : ''}</h3>
   ${tx.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Paid to</th><th>Category</th><th>From account</th><th class="ra">Amount</th></tr></thead><tbody>${tx.slice(0, 60).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td class="num">${fmtDate(t.date)}</td><td><b>${esc(maskWife(t.payee || t.desc))}</b><div class="muted small">${esc(t.note || t.remark || '')}</div></td><td>${catPill(t.cat)}</td><td class="small">${esc(accName('me', t.account))}</td><td class="ra num b">${rs(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No payments tagged for ' + esc(parName()) + ' in this period yet.</div>'}</div>`;
 }
 function parentsSetupModal() {
-  modal('👪 ' + esc(parName()) + ' — names in bank', `<div class="frow"><div class="fld"><label>Show this section as</label><input class="inp" id="ps_n" value="${esc(parName())}" placeholder="Parents / Mummy-Papa"></div></div>
+  modal('👪 ' + esc(parName()) + ' — names in bank', `<div class="frow"><div class="fld"><label>Show this section as</label><input class="inp" id="ps_n" value="${esc(parName())}" placeholder="Parents / Mom & Dad"></div></div>
   <div class="fld"><label>Their names as they appear in your bank transfers (comma separated)</label><input class="inp" id="ps_m" value="${esc(S.settings.parentsMatch || '')}" placeholder="e.g. THAKURLAL BAGHEL, (mother's name)"></div>
   <div class="small muted mt">Any money you send whose bank narration contains one of these names is tagged <b>Sent to ${esc(parName())}</b>. Use at least 4 letters; full names work best.</div>`,
     `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ps_s">Save & apply</button>`, {
@@ -2974,7 +2980,7 @@ VIEWS.dashboard = () => {
   return _dash().replace('<div class="row" style="margin-top:6px"><div class="ico">🤝</div>', row + '<div class="row" style="margin-top:6px"><div class="ico">🤝</div>');
 };
 
-/* ---------- Mom & Dad, Papa's account, car loan ---------- */
+/* ---------- Mom & Dad, Dad's account, car loan ---------- */
 const OPERATORS = ['Jio', 'Airtel', 'Vi', 'BSNL', 'MTNL', 'Other'];
 const LINKS = ['Bank account', 'Pension', 'Gas', 'DTH', 'Electricity', 'Aadhaar', 'PAN', 'UPI', 'WhatsApp', 'Insurance', 'Car loan', 'Other'];
 const LINK_ICON = { 'Bank account': '🏦', Pension: '🧓', Gas: '🔥', DTH: '📺', Electricity: '💡', Aadhaar: '🪪', PAN: '🧾', UPI: '📲', WhatsApp: '💬', Insurance: '🛡️', 'Car loan': '🚗', Other: '📌' };
@@ -2998,7 +3004,7 @@ function papaCard() {
   const pen = tx.filter(t => t.cat === 'pension' && t.dir === 'cr').sort((a, b) => b.date.localeCompare(a.date));
   const bal = acc.map(a => accountBalance('parents', a.id)).filter(Boolean).reduce((s, b) => s + b.bal, 0);
   const loans = live(P('parents').loans || []);
-  if (!tx.length && !loans.length) return `<div class="alert vio mt">🏦 <div><b>Papa's PNB pension account</b> — import his statement to track pension credits, the car-loan EMI and the balance.</div><span class="sp"></span><button class="btn sm pri" data-act="subTab" data-base="parents" data-sub="import">⬆ Import his statement</button></div>`;
+  if (!tx.length && !loans.length) return `<div class="alert vio mt">🏦 <div><b>Dad's PNB pension account</b> — import his statement to track pension credits, the car-loan EMI and the balance.</div><span class="sp"></span><button class="btn sm pri" data-act="subTab" data-base="parents" data-sub="import">⬆ Import his statement</button></div>`;
   const l12 = lastMonths(latestDataMonth(['parents']), 12);
   return `<div class="grid g4 mt">${kpi('🧓 Last pension', pen[0] ? rs(pen[0].amount) : '—', pen[0] ? fmtDate(pen[0].date) : 'No pension credit found yet', 'grn')}${kpi('🏦 Balance (PNB)', bal ? rs(bal) : '—', 'From latest statement', 'blu')}${loans.map(l => { const c = loanCalc(l); return kpi('🚗 ' + esc(l.name), rs(l.emi) + '/mo', c.left != null ? c.left + ' EMIs left' + (c.next ? ' · next ' + fmtDateShort(c.next) : '') : '', 'vio'); }).join('')}${loans.length < 2 ? kpi('📥 Money from you', rs(tx.filter(t => t.cat === 'fromson').reduce((s, t) => s + t.amount, 0)), 'Received in his account', 'gold') : ''}</div>
   ${pen.length ? `<div class="card mt"><h3>🧓 Pension credits <small>12 months</small></h3>${barChart(l12.map(ymLabel), [{ name: 'Pension', color: '#34e89e', values: l12.map(k => txIn('parents', ...monthRange(k)).filter(t => t.cat === 'pension').reduce((s, t) => s + t.amount, 0)) }, { name: 'Spent from his account', color: '#ff7ab6', values: l12.map(k => totals(txIn('parents', ...monthRange(k))).exp) }])}</div>` : ''}`;
@@ -3017,20 +3023,20 @@ function familyView() {
 }
 function loanView() {
   const loans = live(P('parents').loans || []);
-  return `<div class="flex" style="margin-bottom:14px"><span class="muted small" style="flex:1">EMIs debited from Papa's account are picked up from his statement using the “word in statement”.</span><button class="btn pri" data-act="loanEdit">＋ Loan</button></div>
+  return `<div class="flex" style="margin-bottom:14px"><span class="muted small" style="flex:1">EMIs debited from Dad's account are picked up from his statement using the “word in statement”.</span><button class="btn pri" data-act="loanEdit">＋ Loan</button></div>
   ${loans.length ? loans.map(l => { const c = loanCalc(l), bal = l.account ? accountBalance('parents', l.account) : null, low = bal && c.next && bal.bal < l.emi;
-    return `${low ? `<div class="alert red">⚠️ <div>Papa's account balance ${rs(bal.bal)} (${fmtDate(bal.date)}) is lower than the next EMI of ${rs(l.emi)} on ${fmtDate(c.next)}. A bounced EMI means penalty charges — top it up.</div></div>` : ''}
+    return `${low ? `<div class="alert red">⚠️ <div>Dad's account balance ${rs(bal.bal)} (${fmtDate(bal.date)}) is lower than the next EMI of ${rs(l.emi)} on ${fmtDate(c.next)}. A bounced EMI means penalty charges — top it up.</div></div>` : ''}
     <div class="grid g21"><div class="card"><h3>🚗 ${esc(l.name)} <small>${esc(l.lender || '')}</small><span class="sp"></span><button class="btn sm ghost" data-act="loanEdit" data-id="${l.id}">Edit</button></h3>
     <div class="grid g4" style="gap:10px">${kpi('💳 EMI', rs(l.emi), 'on day ' + (l.firstEmi ? +l.firstEmi.slice(8) : '—') + ' each month', 'vio')}${kpi('📆 EMIs left', c.left ?? '—', c.end ? 'last EMI ' + fmtDate(c.end) : 'add tenure', 'gold')}${kpi('⏭️ Next EMI', c.next ? fmtDateShort(c.next) : 'Done', c.next ? 'in ' + daysBetween(today(), c.next) + ' days' : '', 'acc')}${kpi('💰 Outstanding', c.outstanding != null ? rs(c.outstanding) : '—', l.principal && l.rate ? 'estimated principal' : 'remaining EMIs total', 'red')}</div>
     <div class="mt"><div class="flex small"><b>${c.sched} of ${l.tenure || '?'} EMIs paid</b><span class="sp"></span><span class="muted">${Math.round(c.pct * 100)}%</span></div><div class="goal"><div class="gbar"><i class="hb" style="width:${c.pct * 100}%"></i></div></div></div>
     ${l.notes ? `<div class="small muted">${esc(l.notes)}</div>` : ''}</div>
-    <div class="card"><h3>🧾 EMIs seen in statement <small>${c.found.length}</small></h3><div class="list">${c.found.slice(0, 8).map(t => `<div class="row"><div class="ico">✅</div><div class="mid"><div class="t1">${fmtDate(t.date)}</div><div class="t2">${esc(maskWife(t.desc))}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') || `<div class="muted small">None yet. Import Papa's PNB statement${l.match ? '' : ' and set the “word in statement” for this loan'}.</div>`}</div></div></div>`; }).join('<div style="height:16px"></div>')
+    <div class="card"><h3>🧾 EMIs seen in statement <small>${c.found.length}</small></h3><div class="list">${c.found.slice(0, 8).map(t => `<div class="row"><div class="ico">✅</div><div class="mid"><div class="t1">${fmtDate(t.date)}</div><div class="t2">${esc(maskWife(t.desc))}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') || `<div class="muted small">None yet. Import Dad's PNB statement${l.match ? '' : ' and set the “word in statement” for this loan'}.</div>`}</div></div></div>`; }).join('<div style="height:16px"></div>')
     : `<div class="card">${emptyBox('🚗', 'Add the car loan', 'Enter the EMI amount, first EMI date and tenure. With the loan amount and interest rate, the outstanding balance is worked out too.', `<button class="btn pri sm" data-act="loanEdit">＋ Add car loan</button>`)}</div>`}`;
 }
 VIEWS.parents = () => {
   const sub = VIEW.sub.parents || 'overview';
   const rv = live(P('parents').txns).filter(needsReview).length;
-  const tabs = [['overview', '📊 Overview'], ['family', '👨‍👩 Mom & Dad'], ['loan', '🚗 Car loan'], ['txns', "🏦 Papa's account"], ['review', 'Review' + (rv ? ` (${rv})` : '')], ['import', '⬆ Import statement'], ['add', '＋ Add entry']];
+  const tabs = [['overview', '📊 Overview'], ['family', '👨‍👩 Mom & Dad'], ['loan', '🚗 Car loan'], ['txns', "🏦 Dad's account"], ['review', 'Review' + (rv ? ` (${rv})` : '')], ['import', '⬆ Import statement'], ['add', '＋ Add entry']];
   const head = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${sub === k ? 'on' : ''}" data-act="subTab" data-base="parents" data-sub="${k}">${l}</button>`).join('')}</div>`;
   if (sub === 'overview') return head + parentsOverview();
   if (sub === 'family') return head + familyView();
@@ -3039,7 +3045,7 @@ VIEWS.parents = () => {
 };
 function memberModal(id) {
   const m = id ? P('parents').members.find(x => x.id === id) : null;
-  modal(m ? 'Edit ' + esc(m.name) : 'Add person', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="mm_n" value="${esc(m ? m.name : '')}" placeholder="e.g. Papa, Mummy"></div><div class="fld"><label>Who</label><select class="inp" id="mm_r"><option value="dad" ${m?.role === 'dad' ? 'selected' : ''}>👨 Dad</option><option value="mom" ${m?.role === 'mom' ? 'selected' : ''}>👩 Mom</option><option value="other" ${m && !['dad', 'mom'].includes(m.role) ? 'selected' : ''}>🧑 Other</option></select></div></div>
+  modal(m ? 'Edit ' + esc(m.name) : 'Add person', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="mm_n" value="${esc(m ? m.name : '')}" placeholder="e.g. Dad, Mom"></div><div class="fld"><label>Who</label><select class="inp" id="mm_r"><option value="dad" ${m?.role === 'dad' ? 'selected' : ''}>👨 Dad</option><option value="mom" ${m?.role === 'mom' ? 'selected' : ''}>👩 Mom</option><option value="other" ${m && !['dad', 'mom'].includes(m.role) ? 'selected' : ''}>🧑 Other</option></select></div></div>
   <div class="fld"><label>Notes (optional)</label><input class="inp" id="mm_no" value="${esc(m?.notes || '')}" placeholder="e.g. pension PPO no., gas consumer no."></div>`,
     `${m ? '<button class="btn dan" id="mm_d">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="mm_s">Save</button>`, {
     onMount: el => {
@@ -3144,7 +3150,7 @@ const readLinks = el => ({ linked: $$('[data-ln]', el).filter(x => x.checked).ma
 function memberModal(id, prof = 'parents') {
   if (!prof) prof = 'parents';
   const m = id ? findMember(prof, id) : null;
-  modal(m ? 'Edit ' + esc(m.name) : 'Add person', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="mm_n" value="${esc(m ? m.name : '')}" placeholder="e.g. Papa, Mummy, Bhai"></div><div class="fld"><label>Who</label><select class="inp" id="mm_r">${[['self', '🧑 Me'], ['wife', '👩 Wife'], ['dad', '👨 Dad'], ['mom', '👩‍🦳 Mom'], ['other', '🧑 Other family']].map(([k, l]) => `<option value="${k}" ${(m ? m.role : (prof === 'parents' ? 'other' : 'other')) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  modal(m ? 'Edit ' + esc(m.name) : 'Add person', `<div class="frow"><div class="fld"><label>Name</label><input class="inp" id="mm_n" value="${esc(m ? m.name : '')}" placeholder="e.g. Dad, Mom, Bhai"></div><div class="fld"><label>Who</label><select class="inp" id="mm_r">${[['self', '🧑 Me'], ['wife', '👩 Wife'], ['dad', '👨 Dad'], ['mom', '👩‍🦳 Mom'], ['other', '🧑 Other family']].map(([k, l]) => `<option value="${k}" ${(m ? m.role : (prof === 'parents' ? 'other' : 'other')) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
   <div class="fld"><label>Section</label><select class="inp" id="mm_p" ${m ? 'disabled' : ''}><option value="me" ${prof === 'me' ? 'selected' : ''}>${esc(S.settings.meName)}'s</option><option value="wife" ${prof === 'wife' ? 'selected' : ''}>${esc(wifeName())}'s</option><option value="parents" ${prof === 'parents' ? 'selected' : ''}>Parents</option></select></div></div>
   <div class="fld"><label>Notes (optional)</label><input class="inp" id="mm_no" value="${esc(m?.notes || '')}" placeholder="e.g. PPO no., gas consumer no., customer IDs"></div>`,
     `${m && m.role !== 'self' ? '<button class="btn dan" id="mm_d">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="mm_s">Save</button>`, {
@@ -3274,7 +3280,7 @@ function findSavedDuplicates(prof) {
 }
 function dupCheckModal(prof = 'me') {
   const pairs = findSavedDuplicates(prof);
-  const who = { me: S.settings.meName, wife: wifeName(), parents: "Papa's account" }[prof];
+  const who = { me: S.settings.meName, wife: wifeName(), parents: "Dad's account" }[prof];
   const line = t => `<div class="small"><b>${fmtDate(t.date)}</b> · ${esc(accName(prof, t.account))} · ${t.source === 'import' ? '🏦 statement' : t.source === 'bill' ? '🧾 bill paid' : '✍️ added by you'}</div><div class="small muted" style="white-space:normal">${esc(maskWife(t.desc))}</div>`;
   const body = pairs.length ? `<p class="muted" style="margin-top:0">Found <b>${pairs.length}</b> pair${pairs.length === 1 ? '' : 's'} that look like the same payment saved twice. For each, keep one or mark them as two different payments.</p>
   ${pairs.map((p, i) => { const keep = p.a.source === 'import' && p.b.source !== 'import' ? p.a : p.b.source === 'import' && p.a.source !== 'import' ? p.b : (p.a.reviewed ? p.a : p.b); const drop = keep === p.a ? p.b : p.a;
@@ -3356,7 +3362,7 @@ VIEWS.fixed = () => {
   <div class="flex mt" style="margin-bottom:6px"><div class="seg">${[['active', 'Active'], ['inactive', 'Completed / stopped']].map(([k, l]) => `<button class="${flt === k ? 'on' : ''}" data-act="fxf" data-f="${k}">${l}</button>`).join('')}</div><span class="sp" style="flex:1"></span><button class="btn" data-act="icsAll">📆 Calendar reminders</button><button class="btn pri" data-act="fixedAdd">＋ Fixed payment</button></div>
   ${shown.length ? FGROUPS.map(([g, l]) => { const list = shown.filter(b => FTYPES2[fixedType(b)].group === g); return list.length ? `<div class="sec">${l}</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${list.sort((a, b) => (a.nextDue || '9').localeCompare(b.nextDue || '9')).map(fixedCard).join('')}</div>` : ''; }).join('')
     : `<div class="card mt">${emptyBox('🔒', flt === 'active' ? 'No fixed payments yet' : 'Nothing completed yet', 'Add your loan EMIs, term / health / life insurance premiums, mutual fund SIPs, RD / PPF and other regular debits.', flt === 'active' ? `<button class="btn pri sm" data-act="fixedAdd">＋ Add fixed payment</button>` : '')}</div>`}
-  ${pLoans.length ? `<div class="sec">👪 Paid from Papa's account</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${pLoans.map(l => { const c = loanCalc(l); return `<div class="card hov" style="cursor:pointer" data-act="go" data-tab="parents"><div class="flex"><span style="font-size:22px">🚗</span><b style="flex:1">${esc(l.name)}</b><b class="num">${rs(l.emi)}</b></div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${c.left != null ? `<span class="pill vio">${c.left} EMIs left</span>` : ''}${c.next ? `<span class="pill">Next ${fmtDate(c.next)}</span>` : ''}</div></div>`; }).join('')}</div>` : ''}`;
+  ${pLoans.length ? `<div class="sec">👪 Paid from Dad's account</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${pLoans.map(l => { const c = loanCalc(l); return `<div class="card hov" style="cursor:pointer" data-act="go" data-tab="parents"><div class="flex"><span style="font-size:22px">🚗</span><b style="flex:1">${esc(l.name)}</b><b class="num">${rs(l.emi)}</b></div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${c.left != null ? `<span class="pill vio">${c.left} EMIs left</span>` : ''}${c.next ? `<span class="pill">Next ${fmtDate(c.next)}</span>` : ''}</div></div>`; }).join('')}</div>` : ''}`;
 };
 function fixedModal(id, preset) {
   const b = id ? P('me').bills.find(x => x.id === id) : null;
@@ -3437,7 +3443,7 @@ const ACT = {
   exportCsv: el => {
     const k = el.dataset.prof, rows = [['Date', 'Account', 'Payee', 'Narration', 'Ref', 'Mode', 'UPI app', 'Category', 'Debit', 'Credit', 'Balance', 'Note']];
     live(P(k).txns).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => rows.push([t.date, accName(k, t.account), maskWife(t.payee), maskWife(t.desc), t.ref, t.mode, t.app || '', catName(t.cat), t.dir === 'dr' ? t.amount : '', t.dir === 'cr' ? t.amount : '', t.balance ?? '', t.note || '']));
-    confirmBox('Export as CSV?', 'The CSV file is <b>not encrypted</b> — anyone who opens it can read it. Keep it somewhere safe.', 'Download CSV', () => download(({ me: 'ritesh', wife: 'abb', parents: 'papa' }[k] || k) + '-transactions.csv', rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv'));
+    confirmBox('Export as CSV?', 'The CSV file is <b>not encrypted</b> — anyone who opens it can read it. Keep it somewhere safe.', 'Download CSV', () => download(({ me: 'ritesh', wife: 'abb', parents: 'mom-dad' }[k] || k) + '-transactions.csv', rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv'));
   },
   editTxn: el => txnModal(el.dataset.prof || 'me', el.dataset.id),
   reviewSave: el => {
@@ -4164,7 +4170,7 @@ VIEWS.stmts = () => {
       return `<td class="stc ${cl}" data-act="stCell" data-acc="${a.id}" data-y="${y}" data-prof="${k}" title="${esc(lab + ' · ' + sub)}"><b>${ic}</b><small>${esc(sub)}</small></td>`; }).join('');
     return `<tr><th class="sta"><div class="b">${esc(a.name)}${a.last4 ? ' <span class="muted small">··' + esc(a.last4) + '</span>' : ''}</div><label class="small muted">from <select class="inp sm" data-stfrom="${a.id}" data-prof="${k}">${years.map(y => `<option value="${y}" ${+(a.stmtFrom || ST_START()) === y ? 'selected' : ''}>${fyLab(y)}</option>`).join('')}</select></label></th>${cells}</tr>`;
   }).join('');
-  const profs = [['me', 'Me'], ['wife', esc(wifeName())], ['parents', 'Papa']];
+  const profs = [['me', 'Me'], ['wife', esc(wifeName())], ['parents', 'Mom & Dad']];
   return `<div class="flex" style="margin-bottom:12px"><div class="seg">${profs.map(([p, l]) => `<button class="${k === p ? 'on' : ''}" data-act="stProf" data-p="${p}">${l}</button>`).join('')}</div><span class="sp"></span><span class="muted small">Financial years Apr–Mar</span></div>
   <div class="grid g4">${kpi('✅ Complete', cnt.ok, 'years fully uploaded', 'grn')}${kpi('🟡 Partial', cnt.part, 'some months missing', 'amb')}${kpi('❌ Missing', cnt.miss, 'years not uploaded', 'red')}
     <div class="card kpi blu"><div class="lab"><span class="chip">⬆</span><span>Upload statements</span></div><div class="flex" style="margin-top:8px;flex-wrap:wrap"><label class="btn pri" style="cursor:pointer">Choose files<input type="file" id="st_file" multiple accept=".pdf,.csv,.xlsx,.xls,.txt" data-prof="${k}" style="display:none"></label><input class="inp" id="imp_pw" type="password" autocomplete="off" placeholder="PDF password (if any)" style="flex:1;min-width:120px"></div><div id="imp_msg" class="small muted" style="margin-top:6px">Pick many at once — any bank, any year.</div></div></div>
