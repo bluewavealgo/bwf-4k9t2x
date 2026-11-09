@@ -613,21 +613,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (s == null) return null;
     s = String(s).trim();
     if (!s || s === '-') return null;
-    const m = s.replace(/₹|INR|Rs\.?/gi, '').match(/^([\d,]+\.?\d*)\s*(\((Dr|Cr)\)|Dr|Cr)?$/i);
-    if (!m) return null;
-    const v = parseFloat(m[1].replace(/,/g, ''));
+    const m = s.replace(/₹|INR|Rs\.?/gi, '').match(/^([+-])?\s*([\d,]+\.?\d*)\s*(\((Dr|Cr)\)|Dr|Cr)?$/i);
+    if (!m || !/\d/.test(m[2])) return null;
+    const v = parseFloat(m[2].replace(/,/g, ''));
     if (isNaN(v)) return null;
-    const side = m[3] || m[2];
-    return { v, side: side ? side.replace(/[()]/g, '').toLowerCase() : null };
+    const side = m[4] || m[3];
+    return { v, side: side ? side.replace(/[()]/g, '').toLowerCase() : m[1] === '-' ? 'dr' : m[1] === '+' ? 'cr' : null };
   }
 
   const HDR = {
-    date: [/^(txn\.?\s*|transaction\s*|value\s*|post\s*)?date$/i],
+    date: [/^(txn\.?\s*|transaction\s*|value\s*|post\s*)?date$/i, /^transaction$/i],
     narr: [/^(narration|description|particulars|details|transaction details|remarks)$/i],
     ref: [/chq|cheque|ref/i],
     dr: [/^withdrawal/i, /^debit/i, /^withdrawals/i, /^dr\.?\s*(amount|amt)/i],
     cr: [/^deposit/i, /^credit/i, /^cr\.?\s*(amount|amt)/i],
     bal: [/^balance/i],
+    amt: [/^amount$/i, /^amount\s*\(/i],
   };
 
   function groupLines(items) {
@@ -648,11 +649,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const find = k => cand.find(it => HDR[k].some(r => r.test(it.str.trim())));
       const date = find('date'), narr = find('narr'), bal = find('bal');
       if (date && narr && bal) {
-        const dr = find('dr'), cr = find('cr');
+        const dr = find('dr'), cr = find('cr'), amt = find('amt');
         const ref = cand.find(it => HDR.ref.some(r => r.test(it.str)) && it !== narr);
         const yMin = Math.min(...cand.map(c => c.y));
-        return { date, narr, ref, dr, cr, bal, yMin,
-          combined: !!(dr && cr && Math.abs(dr.x - cr.x) < 6) };
+        return { date, narr, ref, dr, cr, amt, bal, yMin,
+          combined: !!(dr && cr && Math.abs(dr.x - cr.x) < 12) };
       }
     }
     return null;
@@ -660,7 +661,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   function statementMeta(text) {
     const meta = {};
-    const acc = text.match(/Account\s*(?:No|Number)\.?\s*:?\s*([0-9X*x]{6,})/i);
+    const acc = text.match(/Account\s*(?:No|Number|#)\.?\s*:?\s*([0-9X*x]{6,})/i);
     if (acc) meta.accountNo = acc[1];
     const t = text.match(/\b(NRE|NRO)\b\s*(Savings|SB|Account|A\/c)/i) || text.match(/Account\s*Type\s*:?\s*(NRE|NRO|Savings)/i);
     if (t) meta.accType = t[1].toUpperCase();
@@ -668,9 +669,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     else if (/state bank of india|\bSBI\b/i.test(text)) meta.bank = 'SBI';
     else if (/punjab national bank|\bPNB\b/i.test(text)) meta.bank = 'PNB';
     else if (/axis bank/i.test(text)) meta.bank = 'Axis';
-    const ob = text.match(/Opening\s*Balance\s*:?\s*([\d,]+\.\d{2})/i);
+    const ob = text.match(/Opening\s*Balance(?:\s*as\s*on\s*[\d\/.-]+)?\s*:?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i);
     if (ob) meta.opening = parseFloat(ob[1].replace(/,/g, ''));
-    const cb = text.match(/Closing\s*Balance\s*:?\s*([\d,]+\.\d{2})/i);
+    const cb = text.match(/Closing\s*Balance(?:\s*as\s*on\s*[\d\/.-]+)?\s*:?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i);
     if (cb) meta.closing = parseFloat(cb[1].replace(/,/g, ''));
     return meta;
   }
@@ -679,6 +680,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function parseStatement(pages) {
     const allText = pages.map(p => p.items.map(i => i.str).join(' ')).join(' \n ');
     const meta = statementMeta(allText);
+    if (!meta.accountNo && pages[0]) { const L = groupLines(pages[0].items.filter(i => i.str.trim())).find(l => l.items.some(i => /account\s*(no|number|#)/i.test(i.str))); const v = L && L.items.find(i => /^\d{9,18}$/.test(i.str.trim())); if (v) meta.accountNo = v.str.trim(); }
     let H = null, rows = [], cur = null, opening = null, done = false;
     for (const pg of pages) {
       if (done) break;
@@ -687,34 +689,60 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (h) H = h;
       if (!H) continue;
       const startY = h ? h.yMin - 1 : Infinity;
-      const xNarr = H.narr.x - 10, xRef = H.ref ? H.ref.x - 9 : Infinity;
-      const amtStart = Math.min(...[H.dr, H.cr, H.bal].filter(Boolean).map(i => i.x)) - 6;
+      const amtStart = Math.min(...[H.dr, H.cr, H.amt, H.bal].filter(Boolean).map(i => i.x)) - 6;
+      const isTime = s => /^\d{1,2}:\d{2}(:\d{2})?\s*([AP]M)?$/i.test(s.trim());
+      const isAmtCol = it => parseAmt(it.str) && (it.x >= amtStart - 2 || it.x + (it.w || 0) > amtStart + 8);
+      const isDateIt = it => it.x < H.narr.x && !isAmtCol(it) && parseDate(it.str);
+      let plines = lines.filter(L => L.y < startY);
+      // layouts where the date sits vertically centred between two text lines of the same row
+      const dLines = plines.filter(L => L.items.some(isDateIt));
+      const balNoDate = plines.filter(L => !L.items.some(isDateIt) && L.items.some(it => isAmtCol(it) && it.x + (it.w || 0) > H.bal.x + 4)).length;
+      if (dLines.length && balNoDate > dLines.length / 2) {
+        const anchors = dLines.map(L => L.y), buckets = new Map(anchors.map(y => [y, { y, items: [] }])), rest = [];
+        plines.forEach(L => {
+          // a row's text starts a few points above its date and runs downward → belongs to the lowest date at/just below its first line
+          let best = null; anchors.forEach(a => { if (a >= L.y - 8 && (best == null || a < best)) best = a; });
+          if (best != null && best - L.y <= 60 && !/statement summary|end of statement|account summary/i.test(L.items.map(i => i.str).join(' '))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
+          else rest.push(L);
+        });
+        buckets.forEach(b => { b.items.sort((a, c) => c.ly - a.ly || a.x - c.x); b.smart = true; });
+        plines = [...buckets.values(), ...rest].sort((a, b) => b.y - a.y);
+      }
+      // narration column may start left of its (centred) heading
+      let xNarr = H.narr.x - 10;
+      plines.forEach(L => { const d = L.items.find(isDateIt); if (!d) return;
+        const nx = L.items.filter(it => it.x > d.x + (d.w || 30) && !parseDate(it.str) && !isTime(it.str) && !isAmtCol(it) && !/^\d{1,4}$/.test(it.str.trim())).map(it => it.x);
+        if (nx.length) { const m = Math.min(...nx) - 2; if (m < xNarr && m > d.x + (d.w || 30) - 4) xNarr = m; } });
+      const xRef = H.ref ? H.ref.x - 9 : Infinity;
+      const refLike = s => /^([A-Z]{1,6}-|[A-Z]{0,6}-?\d{4,})$/.test(s.trim());
       const col = it => {
-        const right = it.x + (it.w || 0);
-        if (it.x >= amtStart - 2 && parseAmt(it.str)) {
+        const right = it.x + (it.w || 0), s = it.str.trim();
+        if (it.x >= amtStart - 2 && /^(dr|cr)$/i.test(s)) return right > H.bal.x + 4 ? 'bside' : 'side';
+        if (isAmtCol(it)) {
           if (right > H.bal.x + 4) return 'bal';
           if (H.combined) return 'amt';
           if (H.cr && H.dr) return right > H.cr.x + 4 ? 'cr' : 'dr';
           return 'amt';
         }
-        if (it.x < xNarr) return parseDate(it.str) ? 'date' : 'idx';
-        if (it.x < xRef) return 'narr';
+        if (it.x < xNarr) return parseDate(s) ? 'date' : 'idx';
+        if (it.x < xRef) return (H.ref && it.x >= H.ref.x - 25 && refLike(s)) ? 'ref' : 'narr';
         if (it.x < amtStart) return 'ref';
         return 'other';
       };
-      for (const L of lines) {
-        if (L.y >= startY) continue;
+      for (const L of plines) {
         const txt = L.items.map(i => i.str).join(' ');
-        if (/statement summary|end of statement|account summary|^\s*total\b/i.test(txt)) { done = true; break; }
-        const cells = { date: [], narr: [], ref: [], dr: [], cr: [], amt: [], bal: [], idx: [], other: [] };
-        L.items.forEach(it => cells[col(it)].push(it.str.trim()));
-        if (/opening balance/i.test(txt)) {
-          const b = parseAmt(cells.bal.join('')); if (b) opening = b.v; continue;
+        if (/statement summary|end of statement|account summary|^\s*total\b|closing balance/i.test(txt)) { done = true; break; }
+        if (/customer contact cent|you may call|write to us|statement generated on|page \d+ of\b|^\s*page \d+\s*$/i.test(txt)) continue;
+        const cells = { date: [], narr: [], ref: [], dr: [], cr: [], amt: [], bal: [], idx: [], other: [], side: [], bside: [] };
+        L.items.forEach(it => { if (!isTime(it.str) || it.x >= amtStart) cells[col(it)].push(it.str.trim()); });
+        if (!cells.date.length && (/opening( balance)?\b|\bB\/F\b|brought forward/i.test(txt))) {
+          let b = parseAmt(cells.bal.join('')); if (!b) { const m = txt.match(/(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})\s*(\(?(Dr|Cr)\)?)?\s*$/i); if (m) b = parseAmt(m[1] + (m[3] ? '(' + m[3] + ')' : '')); }
+          if (b && opening == null) opening = b.v * (b.side === 'dr' || /^dr$/i.test(cells.bside.join('')) ? -1 : 1); continue;
         }
         if (cells.date.length) {
           if (cur) rows.push(cur);
-          cur = { date: parseDate(cells.date[0]), narr: cells.narr.join(' '), ref: cells.ref.join(''),
-            dr: cells.dr.join(''), cr: cells.cr.join(''), amt: cells.amt.join(''), bal: cells.bal.join('') };
+          cur = { date: parseDate(cells.date[0]), narr: L.smart ? cells.narr.reduce((x, y) => !x ? y : x + (/[-:\/]$/.test(x) || (/\d$/.test(x) && /^\d{1,2}$/.test(y)) ? '' : ' ') + y, '') : cells.narr.join(' '), ref: cells.ref.join(''),
+            dr: cells.dr.join(''), cr: cells.cr.join(''), amt: cells.amt.join(''), bal: cells.bal.join(''), side: cells.side.join(''), bside: cells.bside.join('') };
         } else if (cur) {
           if (cells.narr.length) cur.narr += (cur.narr.endsWith('-') || /[a-z]$/.test(cur.narr) && /^[a-z]/.test(cells.narr[0]) ? '' : ' ') + cells.narr.join(' ');
           if (cells.ref.length) cur.ref += cells.ref.join('');
@@ -722,24 +750,32 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           if (!cur.dr && cells.dr.length) cur.dr = cells.dr.join('');
           if (!cur.cr && cells.cr.length) cur.cr = cells.cr.join('');
           if (!cur.bal && cells.bal.length) cur.bal = cells.bal.join('');
+          if (!cur.side && cells.side.length) cur.side = cells.side.join('');
+          if (!cur.bside && cells.bside.length) cur.bside = cells.bside.join('');
         }
       }
     }
     if (cur) rows.push(cur);
+    // newest-first statements → put in date order
+    let inc = 0, dec = 0; for (let i = 1; i < rows.length; i++) { if (rows[i].date > rows[i - 1].date) inc++; else if (rows[i].date < rows[i - 1].date) dec++; }
+    if (dec > inc) rows.reverse();
     // resolve amounts & direction (balance arithmetic first, then Dr/Cr marker)
     let prev = opening ?? meta.opening ?? null;
     const out = [], warnings = [];
     rows.forEach((r, i) => {
       const bal = parseAmt(r.bal);
+      if (bal && !bal.side && r.bside) bal.side = r.bside.toLowerCase();
       let amount = null, dir = null;
       const d = parseAmt(r.dr), c = parseAmt(r.cr), a = parseAmt(r.amt);
-      if (d) { amount = d.v; dir = 'dr'; }
-      else if (c) { amount = c.v; dir = 'cr'; }
+      if (a && !a.side && r.side) a.side = r.side.toLowerCase();
+      if (d) { amount = d.v; dir = d.side === 'cr' ? 'cr' : 'dr'; }
+      else if (c) { amount = c.v; dir = c.side === 'dr' ? 'dr' : 'cr'; }
       else if (a) { amount = a.v; dir = a.side === 'cr' ? 'cr' : a.side === 'dr' ? 'dr' : null; }
+      const explicit = !!((d && d.side) || (c && c.side) || (a && a.side));
       if (bal && prev != null && amount != null) {
         const diff = Math.round((bal.v * (bal.side === 'dr' ? -1 : 1) - prev) * 100) / 100;
         if (Math.abs(Math.abs(diff) - amount) < 0.02) dir = diff < 0 ? 'dr' : 'cr';
-        else warnings.push('Row ' + (i + 1) + ' (' + r.date + ') balance does not add up');
+        else if (!explicit) warnings.push('Row ' + (i + 1) + ' (' + r.date + ') balance does not add up');
       }
       if (bal) prev = bal.v * (bal.side === 'dr' ? -1 : 1);
       if (amount == null || !r.date) { warnings.push('Skipped unreadable row near ' + (r.date || '?')); return; }
@@ -749,6 +785,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
     if (meta.closing == null && prev != null) meta.closing = prev;
     meta.opening = meta.opening ?? opening;
+    if (meta.opening != null && prev != null && out.length) {
+      const net = out.reduce((s, t) => s + (t.dir === 'cr' ? t.amount : -t.amount), 0);
+      if (Math.abs(meta.opening + net - prev) > 0.05) warnings.push('Totals do not add up: opening ' + meta.opening + ' + entries ≠ closing ' + prev);
+    }
     return { meta, txns: out, warnings };
   }
 
@@ -769,7 +809,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.1';
+const APP_VER = '3.2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -804,7 +844,7 @@ const CATS = [
   ['kids', 'Kids / baby', '👶', 'exp'], ['entertainment', 'Entertainment', '🎬', 'exp'], ['subs', 'Subscriptions', '🔁', 'exp'],
   ['insurance', 'Insurance', '🛡️', 'exp'], ['emi', 'EMI / loan', '🏦', 'exp'], ['invest', 'Investments / SIP', '📈', 'inv'],
   ['trading', 'Trading & broker', '💹', 'inv'], ['tools', 'Trading tools', '🛠️', 'exp'], ['taxes', 'Taxes', '🧾', 'exp'],
-  ['cash', 'ATM cash', '💵', 'exp'], ['charges', 'Bank & card charges', '💳', 'exp'], ['gifts', 'Gifts & personal', '🎁', 'exp'], ['parents', 'Sent to parents', '👪', 'exp'], ['other', 'Uncategorised', '❔', 'exp'],
+  ['cash', 'ATM cash', '💵', 'exp'], ['charges', 'Bank & card charges', '💳', 'exp'], ['gifts', 'Gifts & personal', '🎁', 'exp'], ['wallet', 'Wallet top-up', '👛', 'exp'], ['education', 'Education / courses', '🎓', 'exp'], ['parents', 'Sent to parents', '👪', 'exp'], ['other', 'Uncategorised', '❔', 'exp'],
   // income
   ['wages', 'Wages', '🚢', 'inc'], ['interest', 'Interest', '🏦', 'inc'], ['tradingpay', 'Trading payout', '💹', 'inc'],
   ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc'], ['refund', 'Refund / cashback', '↩️', 'inc'], ['family', 'Received from family', '👪', 'inc'],
@@ -828,10 +868,12 @@ const PAY_MODES = ['UPI', 'Auto-debit', 'Card', 'Net banking', 'Cash', 'NEFT/IMP
 /* ---------- built-in categorisation rules (matched on compact upper-case narration) ---------- */
 const RULES_DR = [
   ['charges', /^CHRG|DCCFEE|ECSRETURN|SMSCHARGE|ANNUALFEE|DEBITCARDFEE|MINBAL/],
-  ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|CAMS|KFINTECH/],
+  ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|^MUTUALFUND$|CAMS|KFINTECH|NJINDIA|FDBOOKED|FIXEDDEPOSIT/],
   ['trading', /ZERODHA|DELTAEXCHANGE|UPSTOX|ANGELONE|ANGELBROKING|GROWW|DHAN|FLATTRADE|5PAISA/],
   ['tools', /TRADETRON|ALGOTEST|TICKERTAPE|NEUTRINO|SENSIBULL|STREAK|TRADINGVIEW|OPSTRA|QUANTSAPP|STOCKMOCK/],
-  ['taxes', /ETAX|INCOMETAX|CLEARTAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT/],
+  ['taxes', /ETAX|INCOMETAX|CLEARTAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT|^WTAX/],
+  ['wallet', /ADD-MONEY@P|^OSPAYTM|PAYTMWALLET|ADDMONEY/],
+  ['education', /ACADEMY|INSTITUTE|COLLEGE|UNIVERSITY|\/SCHOOL|COURSE|UDEMY|COURSERA|DGSHIPPING|MARITIMETRAIN/],
   ['insurance', /INSURANC|CAREHEALTH|POLICYBAZAAR|MAXLIFE|LICOFINDIA|HDFCLIFE|ICICIPRU|STARHEALTH|NIVABUPA|ACKO|GODIGIT/],
   ['emi', /\bEMI|EMI\b|LOANREPAY|LOANRECOVERY|LOANAC|BAJAJFIN|HOMELOAN|CARLOAN|AUTOLOAN|VEHICLELOAN|LNREC|LOANINST/],
   ['cash', /^ATL\/|^ATW\/|ATMWDL|CASHWDL|CASHWITHDRAWAL|^ATM/],
@@ -842,26 +884,26 @@ const RULES_DR = [
   ['dth', /TATAPLAY|TATASKY|DISHTV|SUNDIRECT|AIRTELDTH|VIDEOCOND2H|D2H/],
   ['wifi', /JIOFIBER|AIRTELXSTREAM|AIRTELBROADBAND|ACTFIBERNET|HATHWAY|BROADBAND|FIBERNET|EXCITEL|TIKONA/],
   ['subs', /NETFLIX|HOTSTAR|PRIMEVIDEO|AMAZONPRIME|PRIMERE|APPLEMEDIA|APPLE\.COM|SPOTIFY|YOUTUBEPREMIUM|GOOGLEPLAY|ZEE5|SONYLIV|JIOCINEMA|CHATGPT|OPENAI|ANTHROPIC|CLAUDE/],
-  ['phone', /VODAFONE|VODAFONEIDEA|AIRTEL|RELIANCEJIO|\/JIO|BSNL|PREPAIDRECH|MOBILERECHARGE/],
+  ['phone', /VODAFONE|VODAFONEIDEA|AIRTEL|RELIANCEJIO|\/JIO|BSNL|PREPAIDRECH|MOBILERECHARGE|VILPREPAID|^PGVOD/],
   ['entertainment', /BOOKMYSHOW|PVR|INOX|CINEPOLIS|DISTRICT/],
-  ['travel', /SPICEJET|INDIGO|AIRINDIA|AKASA|VISTARA|IRCTC|MAKEMYTRIP|GOIBIBO|CLEARTRIP|IXIGO|TRAVELSEES|YATRA|EASEMYTRIP|AGODA|BOOKING\.COM|OYO|MOBIMATTER|AIRALO/],
+  ['travel', /AIRBNB|BIKE\w*RENT|SPICEJET|INDIGO|AIRINDIA|AKASA|VISTARA|IRCTC|MAKEMYTRIP|GOIBIBO|CLEARTRIP|IXIGO|TRAVELSEES|YATRA|EASEMYTRIP|AGODA|BOOKING\.COM|OYO|MOBIMATTER|AIRALO/],
   ['cab', /UBER|\/OLA|OLACABS|RAPIDO|BLUSMART|\/CAB|CABTO|TAXI/],
   ['bus', /REDBUS|MSRTC|ABHIBUS|\/BUS|BUSTICKET|BEST\/|NMMT/],
   ['ferry', /FERRY|JETTY|MANDWA|M2MFERR|PNPMARITIME|LAUNCH/],
   ['fuel', /PETROL|FUEL|HPCL|BPCL|IOCL|INDIANOIL|SERVICESTA|FILLINGSTATION|PETROLEUM|NAYARA|SHELL/],
   ['vehicle', /MOTOR|CARWASH|WASHMYCAR|DASHCAM|CARKEY|ECOSPORT|FORD|TYRE|AUTOMOBILE|FASTAG|GARAGE|CARACCESS|CARSPA/],
   ['kids', /FIRSTCRY|BABY|HOPSCOTCH|TOYS|CRADDL|CRADLE|KIDS/],
-  ['medical', /CHEMIS|PHARMA|MEDICO|MEDICAL|MEDICINE|APOLLO|HOSPITAL|CLINIC|1MG|PHARMEASY|NETMEDS|DIAGNOSTIC|PATHLAB|MOTHERHOOD|DENTAL|DOCTOR|HEALTHCARE/],
-  ['grocery', /DMART|DMARTAVENUE|BIGBASKET|BLINKIT|ZEPTO|INSTAMART|SUPERMAR|KIRANA|GENERALSTORE|DAIRY|FRUITS|VEGETABLE|MILK|RELIANCEFRESH|RELIANCESMART|PROVISION|GROC|JIOMART|STARBAZAAR/],
+  ['medical', /SHUSHRUSHA|HEARTCARE|MED\/|CHEMIS|PHARMA|MEDICO|MEDICAL|MEDICINE|APOLLO|HOSPITAL|CLINIC|1MG|PHARMEASY|NETMEDS|DIAGNOSTIC|PATHLAB|MOTHERHOOD|DENTAL|DOCTOR|HEALTHCARE/],
+  ['grocery', /FUTURERETAIL|BIGBAZAAR|DMART|DMARTAVENUE|BIGBASKET|BLINKIT|ZEPTO|INSTAMART|SUPERMAR|KIRANA|GENERALSTORE|DAIRY|FRUITS|VEGETABLE|MILK|RELIANCEFRESH|RELIANCESMART|PROVISION|GROC|JIOMART|STARBAZAAR/],
   ['food', /SWIGGY|ZOMATO|FOOD|RESTAURANT|HOTEL|CAFE|MOMO|SWEET|JUICE|BAKERY|PIZZA|DOMINOS|KFC|MCDONALD|BURGER|CHINESE|MISHTH|MITHAI|DHABA|BIRYANI|CHAI|TASTIA|KITCHEN|BIKANER/],
-  ['shopping', /AMAZON|FLIPKART|MYNTRA|AJIO|MEESHO|ZUDIO|MAXRETAIL|BATA|LIMELIGHT|CLOTHES|HANDLOOM|INORBIT|MALL|JEWELL|TRENDS|PANTALOONS|LIFESTYLE|DECATHLON|NYKAA|STATIONAR|FURNITURE|CROMA|RELIANCEDIGITAL|DIGIWORLD|DIGIWORLD/],
+  ['shopping', /NAKAMOBILE|AMAZON|FLIPKART|MYNTRA|AJIO|MEESHO|ZUDIO|MAXRETAIL|BATA|LIMELIGHT|CLOTHES|HANDLOOM|INORBIT|MALL|JEWELL|TRENDS|PANTALOONS|LIFESTYLE|DECATHLON|NYKAA|STATIONAR|FURNITURE|CROMA|RELIANCEDIGITAL|DIGIWORLD|DIGIWORLD/],
   ['gifts', /GIFT/],
 ];
 const RULES_CR = [
   ['pension', /PENSION|PENSN|PENS\.|SPARSH|CPAO|PPOPEN|PENCR|\/PEN\//],
-  ['wages', /NREREM|VSHIPS|SALARY|WAGES|\/SAL\/|SHIPMANAGEMENT|SHIPPING/],
+  ['wages', /NREREM|V\.?SHIPS|SALARY|WAGES|\/SAL\/|SHIPMANAGEMENT|SHIPPING/],
   ['interest', /^SBINT|INT\.?PD|INTEREST|^INT:/],
-  ['refund', /CRADJ|REFUND|REVERSAL|\/REV\/|CASHBACK|^REV/],
+  ['refund', /CRADJ|REFUND|REVERSAL|\/REV\/|CASHBACK|^REV|DIFFINSETT|REWARDEDFO|GOOG-PAYMEN|INGENICO/],
   ['tradingpay', /ZERODHA|NEUTRINO|DELTAEXCHANGE|UPSTOX|ANGELONE|DHAN|GROWW|FLATTRADE/],
   ['ytincome', /YOUTUBE|ADSENSE|GOOGLEINDIA|TRADETRON/],
 ];
@@ -1001,7 +1043,7 @@ function classify(t, profKey) {
   const ur = live(prof.rules).find(r => (!r.dir || r.dir === t.dir) && r.match && c.includes(compact(r.match)));
   // 2. self transfers
   const own = compact(st.ownerMatch);
-  const isSelf = /SENTMONEYTOOWN|RECEIVEDMONEYFROMOWN|FORMUTUALFUND|SWEEPTRANSFER|OWNACCOUNT/.test(c) || (own && c.includes('FUNDTRANSFERFROM' + own)) || (own && /^MB:SENTNEFT|^IB:/.test(c) && c.includes(own));
+  const isSelf = /SENTMONEYTOOWN|RECEIVEDMONEYFROMOWN|FORMUTUALFUND|SWEEPTRANSFER|OWNACCOUNT|^MB:INTERNAL$/.test(c) || (own && c.includes('FUNDTRANSFERFROM' + own)) || (own && /^MB:SENTNEFT|^IB:/.test(c) && c.includes(own));
   const first = own ? compact(st.ownerMatch.split(/\s+/)[0]) : '';
   const selfUpi = profKey === 'me' && t.mode === 'UPI' && first && [first, own].includes(compact(t.payee));
   if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
@@ -1028,11 +1070,13 @@ function classify(t, profKey) {
     const idHit = ids.find(([, v]) => c.includes(compact(v)));
     if (idHit) { out.app = idHit[0]; out.appConf = 'h'; }
     else if (/PAYMENTFROMPH/.test(c)) { out.app = 'PhonePe'; out.appConf = 'h'; }
+    else if (/PAYMENTFRO$/.test(c)) { out.app = 'PhonePe'; out.appConf = 'm'; }
     else if (/PAYMENTFROM$/.test(c)) { out.app = 'PhonePe'; out.appConf = 'm'; }
     else if (/YOUAREPAY/.test(c)) { out.app = 'Amazon Pay'; out.appConf = 'h'; }
     else if (/PAYTM/.test(c)) { out.app = 'Paytm'; out.appConf = 'm'; }
     else if (prof.payeeApp[pk]) { out.app = prof.payeeApp[pk]; out.appConf = 'm'; }
     else if (/RAZORPA|UPIINTENT|MANDATE|RECURRING|OIDMMM|\/OID|PAYVIA|\/COLLECT|REQPAY|PAYMENTTO|PAYMENTFOR|PREPAIDRECH|DEBITMONEY|PRIMERE$|PAYMENTBYR$|SECU$|\/UPI$|BOOKMYSHOW$|^UPI\/[^/]+\/[^/]+\/(?=[A-Z]*\d)[A-Z0-9]{6,}$/.test(c)) { out.app = 'Merchant / autopay'; out.appConf = 'h'; }
+    else if (t.date && t.date < '2022-01-01') { out.app = 'Not shown'; out.appConf = 'm'; }   // older statements don't print the app used
     else { out.app = null; out.appConf = 'l'; }
   }
   // interest TDS
@@ -1702,7 +1746,7 @@ function doImport(link) {
   if (!I.accId) { toast('Choose which account this statement belongs to'); return; }
   const st = importRows(I, link);
   save(); closeModal();
-  toast(`Imported ${st.added}${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged with your entries' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 4000);
+  toast(`Imported ${st.added}${st.repaired ? ' · ' + st.repaired + ' earlier entries updated' : ''}${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged with your entries' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 4000);
   IMPORT = null;
   VIEW.sub[I.profKey === 'me' ? 'money' : I.profKey] = st.review ? 'review' : 'txns';
   render();
@@ -1712,7 +1756,10 @@ function importRows(I, link) {
   const acc = prof.accounts.find(a => a.id === I.accId);
   const last4 = (I.meta.accountNo || '').replace(/\D/g, '').slice(-4);
   if (link && last4 && acc) { acc.last4 = last4; if (I.meta.accType && !acc.type) acc.type = I.meta.accType; touch(acc); }
-  const batch = uid(), added = []; let merged = 0, skipped = I.rows.filter(r => !r.sel).length;
+  const batch = uid(), added = []; let merged = 0, skipped = I.rows.filter(r => !r.sel).length, repaired = 0;
+  // same entry saved earlier from an older read of this statement → refresh its narration/category if you haven't edited it
+  I.rows.filter(r => !r.sel && r.dup === 'sure' && r.matchId).forEach(r => { const o = prof.txns.find(x => x.id === r.matchId);
+    if (o && !o.deleted && o.source === 'import' && !o.reviewed && compact(o.desc) !== compact(r.desc)) { Object.assign(o, { desc: r.desc, ref: r.ref || o.ref, payee: r.payee, mode: r.mode, remark: r.remark, cat: r.cat, conf: r.conf, app: r.app, appConf: r.appConf }); touch(o); repaired++; } });
   I.rows.filter(r => r.sel).forEach(r => {
     const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
     if (t.remark && /HOME\s*EXPE|HOME\s*RENT/i.test(t.remark)) t.note = /RENT/i.test(t.remark) ? 'Home rent' : 'Home expense';
@@ -1723,7 +1770,7 @@ function importRows(I, link) {
   // friend entries for auto-matched friends
   added.filter(t => t.cat === 'friend' && t.friendId).forEach(t => { const f = prof.friends.find(x => x.id === t.friendId); if (f) addFriendEntryFromTxn(f, t); });
   const linked = linkBills(I.profKey, added);
-  return { added: added.length, skipped, merged, linked, review: added.filter(needsReview).length };
+  return { added: added.length, skipped: skipped - repaired, merged, linked, repaired, review: added.filter(needsReview).length };
 }
 function addFriendEntryFromTxn(f, t, type) {
   f.entries = f.entries || [];
@@ -3931,7 +3978,7 @@ function batchModal() {
     const cross = R.filter(r => r.dup && r.matchId && String(r.matchId).startsWith('bx')).length;
     if (it.include && it.accId) { tot += sel; files++; }
     return `<div class="card bit ${it.include ? '' : 'off'}"><div class="flex" style="align-items:flex-start"><label class="chk" style="margin-top:8px"><input type="checkbox" data-binc="${k}" ${it.include ? 'checked' : ''}></label>
-      <span class="itile" style="--ic:${it.accId ? '#3b82f6' : '#f59e0b'}">🏦</span><div class="mid"><b>${esc(it.file)}</b><div class="small muted">${esc(it.meta.bank || 'Bank not detected')}${it.meta.accType ? ' · ' + esc(it.meta.accType) : ''}${last4 ? ' · a/c ··' + esc(last4) : ''} · ${fmtDate(dates[0])} → ${fmtDate(dates[dates.length - 1])}</div>
+      <span class="itile" style="--ic:${it.accId ? '#3b82f6' : '#f59e0b'}">🏦</span><div class="mid"><b>${esc(it.file)}</b><div class="small muted">${esc(it.meta.bank || (P(it.profKey).accounts.find(x => x.id === it.accId) || {}).bank || 'Bank not detected')}${it.meta.accType ? ' · ' + esc(it.meta.accType) : ''}${last4 ? ' · a/c ··' + esc(last4) : ''} · ${fmtDate(dates[0])} → ${fmtDate(dates[dates.length - 1])}</div>
       ${it.same ? `<div class="small" style="color:var(--amb)">⚠ Same statement as “${esc(it.same)}” — left out.</div>` : ''}</div></div>
       <div class="frow mt"><div class="fld"><label>Import into</label><select class="inp" data-bacc="${k}">${it.accId ? '' : '<option value="">— choose the account —</option>'}${accOptions(it.profKey, it.accId)}<option value="__new">＋ New account…</option></select></div></div>
       ${it.accId ? `<div class="bstats"><span><b>${it.txns.length}</b> in file</span><span class="grn"><b>${sel}</b> to import</span>${sure ? `<span><b>${sure}</b> already saved${cross ? ` (${cross} in another file here)` : ''}</span>` : ''}${maybe ? `<span class="amb"><b>${maybe}</b> possible duplicate${maybe > 1 ? 's' : ''}</span>` : ''}${rv ? `<span class="vio"><b>${rv}</b> to review later</span>` : ''}<span class="sp"></span><button class="btn sm" data-act="batchReview" data-k="${k}">${maybe ? '⚠ Check rows' : 'See rows'}</button></div>` : `<div class="alert amb mt" style="margin-bottom:0">🏦 <div>Pick the account above — the app remembers it for next time.</div></div>`}</div>`;
@@ -3944,6 +3991,8 @@ function batchModal() {
       const it = its[+s.dataset.bacc];
       if (s.value === '__new') { const nm = prompt('Name for the new account (e.g. SBI NRE):'); if (!nm) { s.value = it.accId; return; } const a = touch({ id: uid(), bank: it.meta.bank || '', type: it.meta.accType || 'Savings', name: nm, last4: (it.meta.accountNo || '').replace(/\D/g, '').slice(-4), status: 'active' }); P(it.profKey).accounts.push(a); save(); it.accId = a.id; }
       else it.accId = s.value;
+      const l4 = (it.meta.accountNo || '').replace(/\D/g, '').slice(-4);
+      if (l4 && it.accId) its.forEach(o => { if (!o.err && !o.accId && (o.meta.accountNo || '').replace(/\D/g, '').slice(-4) === l4) o.accId = it.accId; });   // same account number in another file
       it.rows = null; batchModal();
     });
   } });
@@ -3961,13 +4010,13 @@ Object.assign(ACT, {
   batchRetry: async el => { const k = +el.dataset.k, it = BATCH.items[k], pw = ($(`[data-bpw="${k}"]`) || {}).value; if (!pw) { toast('Type the password'); return; } el.disabled = true; el.textContent = 'Reading…'; await readItem(it, pw); batchModal(); },
   batchReview: el => { const it = BATCH.items[+el.dataset.k]; it.fromBatch = true; IMPORT = it; closeModal(); importPreview(); },
   batchGo: () => {
-    const B = BATCH, prof = B.profKey; let st = { added: 0, skipped: 0, merged: 0, linked: 0, review: 0 }, n = 0;
+    const B = BATCH, prof = B.profKey; let st = { added: 0, skipped: 0, merged: 0, linked: 0, review: 0, repaired: 0 }, n = 0;
     [...B.items].filter(it => it.include && !it.err && it.accId).sort((a, b) => itFirst(a).localeCompare(itFirst(b))).forEach(it => {
       it.extraPool = null; buildRows(it, null);   // re-check against everything saved so far (incl. files imported just before)
       const s = importRows(it, it.link !== false); Object.keys(st).forEach(x => st[x] += s[x]); n++;
     });
     save(); closeModal(); BATCH = null; IMPORT = null;
-    toast(`${n} file${n === 1 ? '' : 's'} · ${st.added} new entries${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 6000);
+    toast(`${n} file${n === 1 ? '' : 's'} · ${st.added} new entries${st.repaired ? ' · ' + st.repaired + ' earlier entries updated' : ''}${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 6000);
     VIEW.sub[prof === 'me' ? 'money' : prof] = st.review ? 'review' : 'txns';
     render();
   },

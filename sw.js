@@ -1,6 +1,6 @@
 // BlueWave Finance service worker — keeps the app working offline.
 // Only the app itself is cached; your data never leaves the device's encrypted storage.
-const VERSION = 'bwl-f1112e2c7e';
+const VERSION = 'bwl-76071b1c18';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
