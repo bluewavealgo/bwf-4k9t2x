@@ -524,6 +524,21 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
 .bit{padding:14px}.bit .mid{flex:1;min-width:0}.bit .mid b{word-break:break-all}.bit.off{opacity:.55}.bit.err{border-color:var(--red)}
 .bstats{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:10px;font-size:13px;color:var(--tx2)}
 .bstats .grn{color:var(--grn)}.bstats .amb{color:var(--amb)}.bstats .vio{color:var(--vio)}
+/* ---- statements grid ---- */
+.stgrid table{min-width:max-content}
+.stgrid th.sta{text-align:left;min-width:150px;position:sticky;left:0;background:var(--cardSolid);z-index:1}
+.stgrid .inp.sm{padding:2px 4px;font-size:11px;width:auto}
+.stc{text-align:center;cursor:pointer;min-width:84px;padding:8px 6px!important;border-left:1px solid var(--line)}
+.stc b{display:block;font-size:17px}.stc small{display:block;font-size:10px;color:var(--tx3);line-height:1.2;max-width:96px;margin:2px auto 0}
+.stc.grn{background:var(--grnbg)}.stc.amb{background:var(--ambbg)}.stc.red{background:var(--redbg)}.stc.blu{background:var(--bluebg)}.stc.na{color:var(--tx3);cursor:default}
+.stc:hover:not(.na){filter:brightness(1.15)}
+.mstrip{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px}
+.ms{border-radius:10px;padding:8px 2px;text-align:center;background:var(--card2)}.ms b{display:block;font-size:12px}.ms small{display:block;font-size:9.5px;color:var(--tx3)}
+.ms.ok{background:var(--grnbg)}.ms.ok b{color:var(--grn)}.ms.part{background:var(--ambbg)}.ms.part b{color:var(--amb)}.ms.miss{background:var(--redbg)}.ms.miss b{color:var(--red)}.ms.fut{opacity:.4}
+.alert.grn{background:var(--grnbg);border-color:transparent}
+@media (max-width:760px){.mstrip{grid-template-columns:repeat(6,minmax(0,1fr))}}
+
+@media (max-width:760px){#mask .modal .grid.g3{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}#mask .modal .grid.g3 .kpi{padding:10px}#mask .modal .grid.g3 .kpi .val{font-size:16px}}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -677,10 +692,26 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return meta;
   }
 
+  /* statement period(s) printed on the statement, e.g. "Period : 01-04-2019 to 31-03-2020" (monthly statements may have several) */
+  function statementPeriods(all, first) {
+    const DT = '(\\d{1,2}[-\\/ ](?:[A-Za-z]{3,9}|\\d{1,2})[-\\/ ,]+\\d{4})';
+    const out = [], seen = new Set();
+    const add = (a, b) => { const f = parseDate(a.replace(/\s+/g, ' ')), t = parseDate(b.replace(/\s+/g, ' ')); if (f && t && f <= t && !seen.has(f + t)) { seen.add(f + t); out.push([f, t]); } };
+    let m; const re1 = new RegExp('period\\s*:?\\s*(?:from\\s*)?' + DT + '\\s*(?:to|-|–)\\s*' + DT, 'gi');
+    while ((m = re1.exec(all))) add(m[1], m[2]);
+    if (!out.length) {
+      const re2 = new RegExp('(?:from\\s*)?' + DT + '\\s*(?:to|-|–)\\s*' + DT, 'gi'); let best = null;
+      while ((m = re2.exec(first))) { const f = parseDate(m[1]), t = parseDate(m[2]); if (f && t && f < t) { const span = (Date.parse(t) - Date.parse(f)) / 864e5; if (span >= 25 && (!best || span > best[2])) best = [m[1], m[2], span]; } }
+      if (best) add(best[0], best[1]);
+    }
+    return out;
+  }
+
   /* pages: [{items:[{str,x,y,w}]}] */
   function parseStatement(pages) {
     const allText = pages.map(p => p.items.map(i => i.str).join(' ')).join(' \n ');
     const meta = statementMeta(allText);
+    meta.periods = statementPeriods(allText, pages[0] ? pages[0].items.map(i => i.str).join(' ') : '');
     if (!meta.accountNo && pages[0]) { const L = groupLines(pages[0].items.filter(i => i.str.trim())).find(l => l.items.some(i => /account\s*(no|number|#)/i.test(i.str))); const v = L && L.items.find(i => /^\d{9,18}$/.test(i.str.trim())); if (v) meta.accountNo = v.str.trim(); }
     let H = null, rows = [], cur = null, opening = null, done = false, paused = false;
     for (const pg of pages) {
@@ -806,6 +837,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       out.push({ date: r.date, desc: (r.nr ? r.narr.replace(/\\/g, ' ') : r.narr).replace(/\s+/g, ' ').trim(), ref: r.ref.replace(/\s+/g, ''),
         amount, dir, balance: bal ? bal.v : null });
     });
+    // keep printed period(s) only if they actually contain the entries (guards against picking e.g. an interest period)
+    if (out.length) {
+      const dd = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+      const inP = d => meta.periods.some(([f, t]) => d >= dd(f, -5) && d <= dd(t, 5));
+      if (!out.every(t => inP(t.date))) {
+        meta.periods = [];
+        const fy = d => { const y = +d.slice(0, 4), m = +d.slice(5, 7); return m >= 4 ? y : y - 1; };
+        const ds = out.map(t => t.date).sort(), f0 = fy(ds[0]), f1 = fy(dd(ds[ds.length - 1], -5));
+        if (/financialyear/i.test(allText.replace(/\s+/g, "")) && f0 === f1) meta.periods = [[f0 + '-04-01', (f0 + 1) + '-03-31']];
+      }
+    }
     if (meta.closing == null && prev != null) meta.closing = prev;
     meta.opening = meta.opening ?? opening;
     if (meta.opening != null && prev != null && out.length) {
@@ -832,7 +874,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.3';
+const APP_VER = '3.4';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1786,6 +1828,13 @@ function importRows(I, link) {
   const acc = prof.accounts.find(a => a.id === I.accId);
   const last4 = (I.meta.accountNo || '').replace(/\D/g, '').slice(-4);
   if (link && last4 && acc) { acc.last4 = last4; if (I.meta.accType && !acc.type) acc.type = I.meta.accType; touch(acc); }
+  // remember which period this statement covered (Statements tab)
+  if (acc && I.rows && I.rows.length) {
+    const ds = I.rows.map(r => r.date).sort(), pers = (I.meta.periods && I.meta.periods.length) ? I.meta.periods : [[ds[0], ds[ds.length - 1]]];
+    acc.stmts = acc.stmts || [];
+    pers.forEach(([f, t]) => { if (!acc.stmts.some(x => x.from === f && x.to === t)) acc.stmts.push({ from: f, to: t, file: I.file, at: nowIso() }); });
+    touch(acc);
+  }
   const batch = uid(), added = []; let merged = 0, skipped = I.rows.filter(r => !r.sel).length, repaired = 0;
   // same entry saved earlier from an older read of this statement → refresh its narration/category if you haven't edited it
   I.rows.filter(r => !r.sel && r.dup === 'sure' && r.matchId).forEach(r => { const o = prof.txns.find(x => x.id === r.matchId);
@@ -3690,7 +3739,9 @@ VIEWS.dashboard = () => {
   bills.filter(b => b.trialEnd && daysBetween(td, b.trialEnd) >= 0 && daysBetween(td, b.trialEnd) <= 7).forEach(b => todo.push(['🎁', `Free trial of ${esc(b.name)} ends ${fmtDateShort(b.trialEnd)}`, 'Cancel before then if you don’t want it', `data-act="editBill" data-id="${b.id}"`, 'amb', 'Open']));
   lowBalanceWarnings('me').slice(0, 2).forEach(w => todo.push(['⚠️', 'Low balance', w, `data-act="go" data-tab="worth"`, 'amb', 'View']));
   const lastImp = live(me.txns).filter(t => t.source === 'import').map(t => t.date).sort().pop();
-  if (!lastImp || daysBetween(lastImp, td) > 30) todo.push(['📄', lastImp ? 'Upload a recent statement' : 'Upload your first bank statement', lastImp ? 'Latest entry is from ' + fmtDate(lastImp) : 'PDF, CSV or Excel — read only on this device', `data-act="go" data-tab="money" data-sub="import"`, 'blu', 'Upload']);
+  let stMiss = 0; try { const y1 = fyNum(td); stAccounts('me').forEach(a => { const cov = coverage('me', a); for (let y = ST_START(); y <= y1; y++) { const r = fyStatus('me', a, y, cov); if (['miss', 'curmiss', 'part'].includes(r.st)) stMiss++; } }); } catch (e) { }
+  if (stMiss) todo.push(['📂', `${stMiss} bank statement${stMiss > 1 ? 's' : ''} missing`, 'See which years and months to download', `data-act="go" data-tab="stmts"`, 'blu', 'View']);
+  else if (!lastImp || daysBetween(lastImp, td) > 30) todo.push(['📄', lastImp ? 'Upload a recent statement' : 'Upload your first bank statement', lastImp ? 'Latest entry is from ' + fmtDate(lastImp) : 'PDF, CSV or Excel — read only on this device', `data-act="go" data-tab="stmts"`, 'blu', 'Upload']);
   // quick actions
   const qa = [['⚡', 'Add expense', 'fastEntry', '#3b82f6'], ['⬆️', 'Import', 'qaImport', '#06b6d4'], ['🧾', 'Add bill', 'editBill" data-kind="bill', '#f59e0b'], ['🤝', 'Friend entry', 'qaFriend', '#10b981'], ['👩', esc(wifeName()), 'go" data-tab="wife', '#8b5cf6'], ['👪', 'Parents', 'go" data-tab="parents', '#ec4899'], ['🔍', 'Duplicates', 'dupCheck" data-prof="me', '#ef4444'], ['📊', 'Reports', 'go" data-tab="reports', '#14b8a6']];
   // categories
@@ -4051,6 +4102,120 @@ Object.assign(ACT, {
     render();
   },
 });
+
+/* ============ Statements tab — which financial-year statements are uploaded / missing ============ */
+const ST_START = () => +(S.settings.stmtStart || 2018);
+const fyNum = d => { const y = +d.slice(0, 4), m = +d.slice(5, 7); return m >= 4 ? y : y - 1; };
+const fyLab = y => y + '-' + String(y + 1).slice(2);
+const MSHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const mLab = d => MSHORT[+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4);
+function stAccounts(k) { return P(k).accounts.filter(a => !a.deleted && a.type !== 'Cash'); }
+
+/* covered date ranges for one account: printed statement periods + unbroken balance chain of imported entries */
+function coverage(k, acc) {
+  const iv = (acc.stmts || []).map(s => [s.from, s.to]);
+  const tx = live(P(k).txns).filter(t => t.account === acc.id && t.source === 'import').sort((a, b) => a.date.localeCompare(b.date) || (a.seq || 0) - (b.seq || 0));
+  if (tx.length) {
+    const days = []; tx.forEach(t => { let d = days[days.length - 1]; if (!d || d.date !== t.date) days.push(d = { date: t.date, bals: [], opens: [] }); if (t.balance != null) { d.bals.push(t.balance); d.opens.push(Math.round((t.balance - (t.dir === 'cr' ? t.amount : -t.amount)) * 100) / 100); } });
+    let s = days[0].date;
+    for (let i = 1; i < days.length; i++) {
+      const a = days[i - 1], b = days[i];
+      const cont = (!a.bals.length || !b.opens.length) ? daysBetween(a.date, b.date) <= 45 : b.opens.some(o => a.bals.some(x => Math.abs(x - o) < 0.02));
+      if (!cont) { iv.push([s, a.date]); s = b.date; }
+    }
+    iv.push([s, days[days.length - 1].date]);
+  }
+  iv.sort((a, b) => a[0].localeCompare(b[0]));
+  const m = [];
+  iv.forEach(r => { const l = m[m.length - 1]; if (l && r[0] <= addDays(l[1], 1)) { if (r[1] > l[1]) l[1] = r[1]; } else m.push([r[0], r[1]]); });
+  return m;
+}
+function fyStatus(k, acc, y, cov) {
+  const td = today(), [fs, fe0] = fyRange(y), cur = fs <= td && td <= fe0, fe = cur ? td : fe0;
+  const from = Math.max(+(acc.stmtFrom || ST_START()), ST_START());
+  if (y < from || fs > td) return { st: 'na' };
+  // missing pieces inside the year
+  const gaps = []; let p = fs;
+  cov.filter(([a, b]) => b >= fs && a <= fe).forEach(([a, b]) => { if (a > p) gaps.push([p, addDays(a, -1)]); if (addDays(b, 1) > p) p = addDays(b, 1); });
+  let tail = null;
+  if (p <= fe) { if (cur) tail = [p, fe]; else gaps.push([p, fe]); }
+  const real = gaps.filter(([a, b]) => daysBetween(a, b) >= 10);
+  const covered = cov.some(([a, b]) => b >= fs && a <= fe);
+  const n = live(P(k).txns).filter(t => t.account === acc.id && t.date >= fs && t.date <= fe0).length;
+  const missDays = gaps.reduce((t, [x, z]) => t + daysBetween(x, z) + 1, 0) + (tail && !cur ? 0 : 0), spanDays = daysBetween(fs, tail ? addDays(tail[0], -1) : fe) + 1;
+  if (!covered || (!cur && spanDays - missDays < 15)) return { st: cur ? 'curmiss' : 'miss', gaps: [[fs, fe]], n };
+  if (real.length) return { st: 'part', gaps: real, n, upTo: tail ? addDays(tail[0], -1) : null };
+  if (cur) return { st: 'cur', n, upTo: tail ? addDays(tail[0], -1) : fe };
+  return { st: 'ok', n };
+}
+const gapText = g => g.map(([a, b]) => a.slice(0, 7) === b.slice(0, 7) ? mLab(a) : (a.slice(0, 4) === b.slice(0, 4) ? MSHORT[+a.slice(5, 7) - 1] : mLab(a)) + '–' + mLab(b)).join(', ');
+const ST_ICON = { ok: ['✅', 'grn', 'Complete'], cur: ['⏳', 'blu', 'This year'], part: ['🟡', 'amb', 'Partial'], miss: ['❌', 'red', 'Missing'], curmiss: ['❌', 'red', 'Missing'], na: ['', '', ''] };
+
+VIEWS.stmts = () => {
+  const k = VIEW.sub.stProf || 'me', td = today(), y1 = fyNum(td), years = []; for (let y = ST_START(); y <= y1; y++) years.push(y);
+  const accs = stAccounts(k);
+  let cnt = { ok: 0, part: 0, miss: 0 }; const todo = [];
+  const rows = accs.map(a => {
+    const cov = coverage(k, a);
+    const cells = years.map(y => { const r = fyStatus(k, a, y, cov); if (r.st === 'ok' || r.st === 'cur') cnt.ok++; else if (r.st === 'part') { cnt.part++; todo.push([a, y, r]); } else if (r.st === 'miss' || r.st === 'curmiss') { cnt.miss++; todo.push([a, y, r]); }
+      if (r.st === 'na') return `<td class="stc na">·</td>`;
+      const [ic, cl, lab] = ST_ICON[r.st];
+      const sub = r.st === 'part' ? gapText(r.gaps) + ' missing' : r.st === 'cur' ? 'up to ' + mLab(r.upTo) : r.st === 'ok' ? r.n + ' entries' : 'tap to upload';
+      return `<td class="stc ${cl}" data-act="stCell" data-acc="${a.id}" data-y="${y}" data-prof="${k}" title="${esc(lab + ' · ' + sub)}"><b>${ic}</b><small>${esc(sub)}</small></td>`; }).join('');
+    return `<tr><th class="sta"><div class="b">${esc(a.name)}${a.last4 ? ' <span class="muted small">··' + esc(a.last4) + '</span>' : ''}</div><label class="small muted">from <select class="inp sm" data-stfrom="${a.id}" data-prof="${k}">${years.map(y => `<option value="${y}" ${+(a.stmtFrom || ST_START()) === y ? 'selected' : ''}>${fyLab(y)}</option>`).join('')}</select></label></th>${cells}</tr>`;
+  }).join('');
+  const profs = [['me', 'Me'], ['wife', esc(wifeName())], ['parents', 'Papa']];
+  return `<div class="flex" style="margin-bottom:12px"><div class="seg">${profs.map(([p, l]) => `<button class="${k === p ? 'on' : ''}" data-act="stProf" data-p="${p}">${l}</button>`).join('')}</div><span class="sp"></span><span class="muted small">Financial years Apr–Mar</span></div>
+  <div class="grid g4">${kpi('✅ Complete', cnt.ok, 'years fully uploaded', 'grn')}${kpi('🟡 Partial', cnt.part, 'some months missing', 'amb')}${kpi('❌ Missing', cnt.miss, 'years not uploaded', 'red')}
+    <div class="card kpi blu"><div class="lab"><span class="chip">⬆</span><span>Upload statements</span></div><div class="flex" style="margin-top:8px;flex-wrap:wrap"><label class="btn pri" style="cursor:pointer">Choose files<input type="file" id="st_file" multiple accept=".pdf,.csv,.xlsx,.xls,.txt" data-prof="${k}" style="display:none"></label><input class="inp" id="imp_pw" type="password" autocomplete="off" placeholder="PDF password (if any)" style="flex:1;min-width:120px"></div><div id="imp_msg" class="small muted" style="margin-top:6px">Pick many at once — any bank, any year.</div></div></div>
+  ${accs.length ? `<div class="card mt" style="padding:8px"><div class="tblw stgrid"><table class="t"><thead><tr><th>Account</th>${years.map(y => `<th class="ra">${fyLab(y)}${y === y1 ? ' <span class="pill blu" style="font-size:9px">now</span>' : ''}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="small muted" style="padding:8px 6px 2px">✅ complete · ⏳ current year · 🟡 some months missing · ❌ not uploaded · tap a box for details. “from” = first year to track for that account.</div></div>`
+  : `<div class="card mt">${emptyBox('🏦', 'No bank accounts yet', 'Add accounts in Settings, or just upload a statement.', '')}</div>`}
+  ${todo.length ? `<div class="sec">To download from your bank (${todo.length})</div><div class="card" style="padding:4px 14px">${todo.sort((a, b) => a[1] - b[1]).map(([a, y, r]) => `<div class="txc" data-act="stCell" data-acc="${a.id}" data-y="${y}" data-prof="${k}"><span class="itile" style="--ic:${r.st === 'part' ? '#f59e0b' : '#ef4444'}">${r.st === 'part' ? '🟡' : '❌'}</span><div class="mid"><div class="t1">${esc(a.name)} · FY ${fyLab(y)}</div><div class="t2">${r.st === 'part' ? 'Missing: ' + gapText(r.gaps) : 'Whole year: ' + fmtDate(fyRange(y)[0]) + ' → ' + fmtDate(y === y1 ? td : fyRange(y)[1])}</div></div><span class="chev">›</span></div>`).join('')}</div>`
+  : accs.length ? `<div class="alert grn mt">🎉 <div>All statements are uploaded for the years you track.</div></div>` : ''}`;
+};
+
+function stCellModal(k, accId, y) {
+  const a = P(k).accounts.find(x => x.id === accId), cov = coverage(k, a), r = fyStatus(k, a, y, cov), [fs, fe] = fyRange(y), td = today();
+  const tx = live(P(k).txns).filter(t => t.account === accId && t.date >= fs && t.date <= fe).sort((p, q) => p.date.localeCompare(q.date) || (p.seq || 0) - (q.seq || 0));
+  const months = Array.from({ length: 12 }, (_, i) => { const mm = (i + 3) % 12 + 1, yy = mm >= 4 ? y : y + 1, ms = yy + '-' + String(mm).padStart(2, '0') + '-01', me = monthRange(ms.slice(0, 7))[1];
+    if (ms > td) return [MSHORT[mm - 1], 'fut', ''];
+    const e = me > td ? td : me; let c = 0; for (let d = ms; d <= e; d = addDays(d, 1)) if (cov.some(([p, q]) => d >= p && d <= q)) c++;
+    const tot = daysBetween(ms, e) + 1, n = tx.filter(t => t.date.slice(0, 7) === ms.slice(0, 7)).length;
+    return [MSHORT[mm - 1], c >= tot - 1 ? 'ok' : c ? 'part' : 'miss', n]; });
+  const stm = (a.stmts || []).filter(s => s.to >= fs && s.from <= fe);
+  const [ic, , lab] = ST_ICON[r.st] || ['', '', ''];
+  const body = `<div class="flex" style="margin-bottom:10px"><span style="font-size:26px">${ic || '·'}</span><div><b>${esc(lab || 'Not tracked')}</b><div class="muted small">${r.st === 'part' ? 'Missing: ' + gapText(r.gaps) : r.st === 'cur' ? 'Covered up to ' + fmtDate(r.upTo) : r.st === 'ok' ? 'The whole year is covered' : r.st === 'na' ? 'Before the first year you track for this account' : 'Nothing uploaded for this year yet'}</div></div></div>
+  <div class="mstrip">${months.map(([l, s, n]) => `<div class="ms ${s}"><b>${l}</b><small>${s === 'fut' ? '' : s === 'miss' ? 'missing' : n + ' entr' + (n === 1 ? 'y' : 'ies')}</small></div>`).join('')}</div>
+  <div class="grid g3 mt">${kpi('Entries', tx.length, '', '')}${kpi('Opening', tx.length && tx[0].balance != null ? rs(Math.round((tx[0].balance - (tx[0].dir === 'cr' ? tx[0].amount : -tx[0].amount)) * 100) / 100) : '—', tx.length ? fmtDate(tx[0].date) : '', '')}${kpi('Closing', tx.length && tx[tx.length - 1].balance != null ? rs(tx[tx.length - 1].balance) : '—', tx.length ? fmtDate(tx[tx.length - 1].date) : '', '')}</div>
+  ${stm.length ? `<div class="sec">Statements uploaded</div>${stm.map(s => `<div class="small" style="padding:4px 0">📄 ${esc(s.file || 'statement')} <span class="muted">· ${fmtDate(s.from)} → ${fmtDate(s.to)}</span></div>`).join('')}` : ''}
+  <div class="small muted mt">Covered months are worked out from the statement period printed on each file and from the running balance, so quiet months with no entries still count as covered. If you uploaded files before this update, upload them again once — nothing doubles, and their periods get recorded.</div>`;
+  modal(`${esc(a.name)} · FY ${fyLab(y)}`, body, `<button class="btn" data-act="closeModal">Close</button>${tx.length ? `<button class="btn" data-act="stSee" data-acc="${accId}" data-y="${y}" data-prof="${k}">See entries</button>` : ''}<label class="btn pri" style="cursor:pointer">⬆ Upload for this year<input type="file" id="st_file2" multiple accept=".pdf,.csv,.xlsx,.xls,.txt" data-prof="${k}" style="display:none"></label>`, { wide: true });
+}
+async function stUpload(input) {
+  const files = [...input.files]; if (!files.length) return;
+  const k = input.dataset.prof || 'me', pw = ($('#imp_pw') || {}).value || undefined;
+  if (input.id === 'st_file2') closeModal();
+  if (!$('#imp_msg')) { const d = document.createElement('div'); d.id = 'imp_msg'; d.style.display = 'none'; document.body.appendChild(d); }
+  await readBatch(k, files, pw);
+}
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.id === 'st_file' || el.id === 'st_file2') { stUpload(el); return; }
+  if (el.dataset && el.dataset.stfrom) { const a = P(el.dataset.prof).accounts.find(x => x.id === el.dataset.stfrom); if (a) { a.stmtFrom = +el.value; touch(a); save(); rerender(); } }
+});
+Object.assign(ACT, {
+  stProf: el => { VIEW.sub.stProf = el.dataset.p; rerender(); },
+  stCell: el => stCellModal(el.dataset.prof, el.dataset.acc, +el.dataset.y),
+  stSee: el => { const k = el.dataset.prof, [f, t] = fyRange(+el.dataset.y); closeModal(); const base = k === 'me' ? 'money' : k; VIEW.tab = base; VIEW.sub[base] = 'txns'; VIEW.sub['f_' + k] = { q: '', m: '', acc: el.dataset.acc, cat: '', app: '', ty: '', from: f, to: t }; render(); },
+});
+// menu + titles
+NAV.splice(NAV.findIndex(n => n[0] === 'money') + 1, 0, ['stmts', 'Statements', '📂']);
+TITLES.stmts = 'Bank statements';
+MORE_TILES.splice(4, 0, ['stmts', '📂', 'Statements', '#0ea5e9']);
+// batch import → stay on the Statements tab when started there
+const _batchGo = ACT.batchGo;
+ACT.batchGo = el => { const onSt = VIEW.tab === 'stmts'; _batchGo(el); if (onSt) { VIEW.tab = 'stmts'; render(); } };
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){const b=document.createElement('div');b.className='toast';b.innerHTML='New version ready — <a href="#" onclick="location.reload();return false">tap to update</a>';document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
