@@ -874,7 +874,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.5';
+const APP_VER = '3.6';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1014,7 +1014,10 @@ const payeeKey = p => compact(p).replace(/[^A-Z]/g, '').slice(0, 24);
 const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payeeApp: {}, dismissed: [] });
 function seedState() {
   const t = nowIso();
-  const acc = (bank, type, name, extra = {}) => ({ id: uid(), bank, type, name, last4: '', status: 'active', updatedAt: t, ...extra });
+  // fixed ids + an old timestamp, so every device creates the SAME built-in records and sync never doubles them
+  const T0 = '2000-01-01T00:00:00.000Z', sid = (p, n) => 'seed_' + p + '_' + n.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  let curP = 'me';
+  const acc = (bank, type, name, extra = {}) => ({ id: sid(curP, name.replace(/^ABB |^Dad /, '')), bank, type, name, last4: '', status: 'active', updatedAt: T0, ...extra });
   const s = {
     v: 1,
     settings: {
@@ -1024,10 +1027,10 @@ function seedState() {
     },
     profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('ABB'), parents: EMPTY_PROFILE('Parents') },
   };
-  s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('Cash', 'Cash', 'Cash wallet')];
-  s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Dad PNB (pension)')];
-  s.profiles.parents.members = [{ id: uid(), role: 'dad', name: 'Dad', phones: [], notes: '', updatedAt: t }, { id: uid(), role: 'mom', name: 'Mom', phones: [], notes: '', updatedAt: t }];
-  s.profiles.wife.accounts = [acc('SBI', 'Savings', 'ABB SBI'), acc('Axis', 'Savings', 'ABB Axis', { status: 'closed' }), acc('Cash', 'Cash', 'ABB cash')];
+  curP = 'me'; s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('Cash', 'Cash', 'Cash wallet')];
+  curP = 'parents'; s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Dad PNB (pension)')];
+  s.profiles.parents.members = [{ id: 'seed_parents_dad', role: 'dad', name: 'Dad', phones: [], notes: '', updatedAt: T0 }, { id: 'seed_parents_mom', role: 'mom', name: 'Mom', phones: [], notes: '', updatedAt: T0 }];
+  curP = 'wife'; s.profiles.wife.accounts = [acc('SBI', 'Savings', 'ABB SBI'), acc('Axis', 'Savings', 'ABB Axis', { status: 'closed' }), acc('Cash', 'Cash', 'ABB cash')];
   return s;
 }
 let S = null;          // decrypted state in memory
@@ -1074,6 +1077,7 @@ async function unlockVault(pin) {
   } catch (e) { return false; }
 }
 function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); PROFS.forEach(k => { const fresh = !S.profiles[k]; S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k] || d.profiles[k]); if (fresh) S.profiles[k].updatedAt = nowIso(); });
+  try { dedupeSeeds(); } catch (e) { console.warn(e); }
   if (!S.settings.momDadV) { S.settings.momDadV = 1; const pr = S.profiles.parents;
     (pr.accounts || []).forEach(a => { if (/^papa\b/i.test(a.name || '')) { a.name = a.name.replace(/^papa/i, 'Dad'); touch(a); } });
     (pr.members || []).forEach(m => { if (/^papa$/i.test(m.name || '')) { m.name = 'Dad'; touch(m); } else if (/^mummy$/i.test(m.name || '')) { m.name = 'Mom'; touch(m); } });
@@ -1279,6 +1283,48 @@ function unsyncedCount() {
   let n = 0; PROFS.forEach(k => COLL.forEach(c => { n += (P(k)[c] || []).filter(r => (r.updatedAt || '') > since).length; }));
   return n;
 }
+/* merge built-in accounts / people that were created separately on two devices before sync (same bank+type+name, or same role+name) */
+const REF_KEYS = ['account', 'accId', 'accountId', 'fromAcc', 'toAcc'];
+function remapRefs(obj, from, to) {
+  if (Array.isArray(obj)) { obj.forEach(o => remapRefs(o, from, to)); return; }
+  if (!obj || typeof obj !== 'object') return;
+  let ch = false;
+  for (const k of Object.keys(obj)) { if (REF_KEYS.includes(k) && obj[k] === from) { obj[k] = to; ch = true; } else if (obj[k] && typeof obj[k] === 'object') remapRefs(obj[k], from, to); }
+  if (ch && obj.updatedAt) obj.updatedAt = nowIso();
+}
+function dedupeSeeds() {
+  let n = 0;
+  PROFS.forEach(k => {
+    const pr = S.profiles[k]; if (!pr) return;
+    const uses = id => (pr.txns || []).filter(t => !t.deleted && t.account === id).length;
+    const groups = {};
+    live(pr.accounts || []).forEach(a => { const g = [a.bank, a.type, a.name].join('|').toLowerCase(); (groups[g] = groups[g] || []).push(a); });
+    Object.values(groups).filter(g => g.length > 1).forEach(g => {
+      const l4 = [...new Set(g.map(a => a.last4).filter(Boolean))]; if (l4.length > 1) return;   // genuinely different accounts
+      g.sort((a, b) => uses(b.id) - uses(a.id) || (b.last4 ? 1 : 0) - (a.last4 ? 1 : 0) || a.id.localeCompare(b.id));
+      const keep = g[0];
+      g.slice(1).forEach(d => {
+        COLL.forEach(c => { if (c !== 'accounts') remapRefs(pr[c] || [], d.id, keep.id); });
+        if (!keep.last4 && d.last4) keep.last4 = d.last4;
+        if (keep.stmtFrom == null && d.stmtFrom != null) keep.stmtFrom = d.stmtFrom;
+        (d.stmts || []).forEach(x => { keep.stmts = keep.stmts || []; if (!keep.stmts.some(y => y.from === x.from && y.to === x.to)) keep.stmts.push(x); });
+        d.deleted = true; touch(d); touch(keep); n++;
+      });
+    });
+    const mg = {};
+    live(pr.members || []).forEach(m => { const g = (m.role || '') + '|' + String(m.name || '').trim().toLowerCase(); (mg[g] = mg[g] || []).push(m); });
+    Object.values(mg).filter(g => g.length > 1).forEach(g => {
+      g.sort((a, b) => ((b.phones || []).length + (b.emails || []).length) - ((a.phones || []).length + (a.emails || []).length) || a.id.localeCompare(b.id));
+      const keep = g[0];
+      g.slice(1).forEach(d => {
+        ['phones', 'emails'].forEach(f => (d[f] || []).forEach(x => { keep[f] = keep[f] || []; const key = String(x.number || x.email || x.value || JSON.stringify(x)).replace(/\s+/g, ''); if (!keep[f].some(y => String(y.number || y.email || y.value || JSON.stringify(y)).replace(/\s+/g, '') === key)) keep[f].push(x); }));
+        if (d.notes && !(keep.notes || '').includes(d.notes)) keep.notes = [keep.notes, d.notes].filter(Boolean).join('\n');
+        d.deleted = true; touch(d); touch(keep); n++;
+      });
+    });
+  });
+  return n;
+}
 function mergeProfile(local, remote) {
   if (!remote) return local;
   COLL.forEach(c => {
@@ -1299,6 +1345,7 @@ async function runSync() {
   for (const prof of PROFS) {
     const pulled = await callScript({ key, action: 'pull', profile: prof });
     mergeProfile(P(prof), pulled.data);
+    dedupeSeeds();
     await callScript({ key, action: 'push', profile: prof, data: P(prof) });
   }
   S.settings.sync.lastAt = nowIso(); await persist();
@@ -3110,8 +3157,8 @@ const EMAIL_PROVIDERS = ['Gmail', 'Outlook / Hotmail', 'Yahoo', 'Rediffmail', 'i
 const ROLE_ICON = { self: '🧑', wife: '👩', dad: '👨', mom: '👩‍🦳', other: '🧑' };
 function ensureMembers() {
   const t = nowIso(); let ch = false;
-  if (!live(P('me').members || []).length) { P('me').members = [{ id: uid(), role: 'self', name: S.settings.meName || 'Ritesh', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
-  if (!live(P('wife').members || []).length) { P('wife').members = [{ id: uid(), role: 'wife', name: S.settings.wifeName || 'ABB', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
+  if (!live(P('me').members || []).length) { P('me').members = [{ id: 'seed_me_self', role: 'self', name: S.settings.meName || 'Ritesh', phones: [], emails: [], notes: '', updatedAt: '2000-01-01T00:00:00.000Z' }]; ch = true; }
+  if (!live(P('wife').members || []).length) { P('wife').members = [{ id: 'seed_wife_self', role: 'wife', name: S.settings.wifeName || 'ABB', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
   if (ch) save();
 }
 const findMember = (prof, id) => (P(prof).members || []).find(x => x.id === id);
@@ -3510,7 +3557,7 @@ const CHANGE = {
   restore: async el => {
     const f = el.files[0]; if (!f) return;
     let j; try { j = JSON.parse(await f.text()); } catch (e) { toast('Not a backup file'); return; }
-    const apply = data => { PROFS.forEach(k => { if (data.profiles[k]) mergeProfile(P(k), data.profiles[k]); }); save(); render(); toast('Backup restored and merged'); };
+    const apply = data => { PROFS.forEach(k => { if (data.profiles[k]) mergeProfile(P(k), data.profiles[k]); }); dedupeSeeds(); save(); render(); toast('Backup restored and merged'); };
     if (j.plain) { apply(j.data); return; }
     modal('Restore backup', `<div class="fld"><label>PIN used when this backup was made</label><input class="inp" id="rp" type="password" inputmode="numeric"></div>`, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="rgo">Restore</button>`, {
       onMount: m => $('#rgo', m).onclick = async () => { try { const k = await deriveKey($('#rp', m).value, b64.dec(j.salt)); const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.dec(j.iv) }, k, b64.dec(j.ct)); closeModal(); apply(JSON.parse(new TextDecoder().decode(pt))); } catch (e) { toast('Wrong PIN for this backup'); } }
