@@ -613,7 +613,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (s == null) return null;
     s = String(s).trim();
     if (!s || s === '-') return null;
-    const m = s.replace(/₹|INR|Rs\.?/gi, '').match(/^([+-])?\s*([\d,]+\.?\d*)\s*(\((Dr|Cr)\)|Dr|Cr)?$/i);
+    const m = s.replace(/₹|INR|Rs\.?/gi, '').match(/^([+-])?\s*([\d,]+\.?\d*)\s*(\((Dr|Cr)\)|Dr|Cr)?\.?$/i);
     if (!m || !/\d/.test(m[2])) return null;
     const v = parseFloat(m[2].replace(/,/g, ''));
     if (isNaN(v)) return null;
@@ -642,10 +642,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return lines.sort((a, b) => b.y - a.y);
   }
 
-  function findHeader(lines) {
+  function findHeader(lines) { return findHeaderW(lines, 8) || findHeaderW(lines, 13); }
+  function findHeaderW(lines, win) {
     for (let i = 0; i < lines.length; i++) {
-      // header may span 2 close lines (e.g. "Withdrawal(Dr)/" + "Deposit(Cr)")
-      const cand = lines.filter(l => Math.abs(l.y - lines[i].y) <= 8).flatMap(l => l.items);
+      // header may span 2-3 close lines (e.g. "Withdrawal(Dr)/" + "Deposit(Cr)", "Transaction" + "Date")
+      const cand = lines.filter(l => Math.abs(l.y - lines[i].y) <= win).flatMap(l => l.items);
       const find = k => cand.find(it => HDR[k].some(r => r.test(it.str.trim())));
       const date = find('date'), narr = find('narr'), bal = find('bal');
       if (date && narr && bal) {
@@ -661,13 +662,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   function statementMeta(text) {
     const meta = {};
-    const acc = text.match(/Account\s*(?:No|Number|#)\.?\s*:?\s*([0-9X*x]{6,})/i);
+    const acc = text.match(/Account\s*(?:No|Number|#)\.?\s*:?\s*([0-9X*x]{6,})/i) || text.match(/For\s*Account\s*:?\s*(\d{9,18})/i);
     if (acc) meta.accountNo = acc[1];
     const t = text.match(/\b(NRE|NRO)\b\s*(Savings|SB|Account|A\/c)/i) || text.match(/Account\s*Type\s*:?\s*(NRE|NRO|Savings)/i);
     if (t) meta.accType = t[1].toUpperCase();
     if (/kotak/i.test(text)) meta.bank = 'Kotak';
     else if (/state bank of india|\bSBI\b/i.test(text)) meta.bank = 'SBI';
-    else if (/punjab national bank|\bPNB\b/i.test(text)) meta.bank = 'PNB';
+    else if (/punjab national bank|\bPNB\b|\bPUNB0/i.test(text)) meta.bank = 'PNB';
     else if (/axis bank/i.test(text)) meta.bank = 'Axis';
     const ob = text.match(/Opening\s*Balance(?:\s*as\s*on\s*[\d\/.-]+)?\s*:?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i);
     if (ob) meta.opening = parseFloat(ob[1].replace(/,/g, ''));
@@ -681,28 +682,47 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const allText = pages.map(p => p.items.map(i => i.str).join(' ')).join(' \n ');
     const meta = statementMeta(allText);
     if (!meta.accountNo && pages[0]) { const L = groupLines(pages[0].items.filter(i => i.str.trim())).find(l => l.items.some(i => /account\s*(no|number|#)/i.test(i.str))); const v = L && L.items.find(i => /^\d{9,18}$/.test(i.str.trim())); if (v) meta.accountNo = v.str.trim(); }
-    let H = null, rows = [], cur = null, opening = null, done = false;
+    let H = null, rows = [], cur = null, opening = null, done = false, paused = false;
     for (const pg of pages) {
       if (done) break;
-      const lines = groupLines(pg.items.filter(i => i.str.trim()));
+      const lines = groupLines(pg.items.filter(i => i.str.trim())).filter(L => !/^\s*page\s*no\.?\s*\d*\s*-?\s*$/i.test(L.items.map(i => i.str).join(' ')));
       const h = findHeader(lines);
-      if (h) H = h;
-      if (!H) continue;
+      if (h) { H = h; paused = false; }
+      if (!H || paused) continue;
       const startY = h ? h.yMin - 1 : Infinity;
       const amtStart = Math.min(...[H.dr, H.cr, H.amt, H.bal].filter(Boolean).map(i => i.x)) - 6;
       const isTime = s => /^\d{1,2}:\d{2}(:\d{2})?\s*([AP]M)?$/i.test(s.trim());
-      const isAmtCol = it => parseAmt(it.str) && (it.x >= amtStart - 2 || it.x + (it.w || 0) > amtStart + 8);
+      // narration printed to the right of the balance (PNB)
+      const narrRight = H.narr.x > H.bal.x + 20;
+      let narrStart = Infinity;
+      if (narrRight) {
+        const dl = lines.filter(L => L.y < startY);
+        const xs = dl.flatMap(L => L.items.filter(it => it.x > H.bal.x + 25 && !/^[\d,]+\.\d{2}\s*(Cr|Dr)?\.?$/i.test(it.str.trim())).map(it => it.x));
+        narrStart = (xs.length ? Math.min(...xs) : H.narr.x) - 4;
+      }
+      const isAmtCol = it => it.x < narrStart && parseAmt(it.str) && (it.x >= amtStart - 2 || it.x + (it.w || 0) > amtStart + 8);
       const isDateIt = it => it.x < H.narr.x && !isAmtCol(it) && parseDate(it.str);
       let plines = lines.filter(L => L.y < startY);
+      const isSum = L => /opening\s*balance|closing\s*balance|\bB\/F\b|brought forward/i.test(L.items.map(i => i.str).join(' '));
       // layouts where the date sits vertically centred between two text lines of the same row
       const dLines = plines.filter(L => L.items.some(isDateIt));
-      const balNoDate = plines.filter(L => !L.items.some(isDateIt) && L.items.some(it => isAmtCol(it) && it.x + (it.w || 0) > H.bal.x + 4)).length;
-      if (dLines.length && balNoDate > dLines.length / 2) {
+      const balNoDate = plines.filter(L => !isSum(L) && !L.items.some(isDateIt) && L.items.some(it => isAmtCol(it) && it.x + (it.w || 0) > H.bal.x + 4)).length;
+      if (narrRight && dLines.length) {
+        // wrapped narration sits above and below the date line → nearest date wins
+        const anchors = dLines.map(L => L.y), buckets = new Map(anchors.map(y => [y, { y, items: [], smart: true }])), rest = [];
+        plines.forEach(L => {
+          let best = null; anchors.forEach(a => { if (best == null || Math.abs(a - L.y) < Math.abs(best - L.y)) best = a; });
+          if (best != null && Math.abs(best - L.y) <= 22 && !isSum(L) && !(L.items.every(it => it.x < narrStart) && !L.items.some(isDateIt) && !L.items.some(isAmtCol))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
+          else rest.push(L);
+        });
+        buckets.forEach(b => b.items.sort((a, c) => c.ly - a.ly || a.x - c.x));
+        plines = [...buckets.values(), ...rest].sort((a, b) => b.y - a.y);
+      } else if (dLines.length && balNoDate > dLines.length / 2) {
         const anchors = dLines.map(L => L.y), buckets = new Map(anchors.map(y => [y, { y, items: [] }])), rest = [];
         plines.forEach(L => {
           // a row's text starts a few points above its date and runs downward → belongs to the lowest date at/just below its first line
           let best = null; anchors.forEach(a => { if (a >= L.y - 8 && (best == null || a < best)) best = a; });
-          if (best != null && best - L.y <= 60 && !/statement summary|end of statement|account summary/i.test(L.items.map(i => i.str).join(' '))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
+          if (best != null && best - L.y <= 60 && !isSum(L) && !/statement summary|end of statement|account summary/i.test(L.items.map(i => i.str).join(' '))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
           else rest.push(L);
         });
         buckets.forEach(b => { b.items.sort((a, c) => c.ly - a.ly || a.x - c.x); b.smart = true; });
@@ -713,10 +733,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       plines.forEach(L => { const d = L.items.find(isDateIt); if (!d) return;
         const nx = L.items.filter(it => it.x > d.x + (d.w || 30) && !parseDate(it.str) && !isTime(it.str) && !isAmtCol(it) && !/^\d{1,4}$/.test(it.str.trim())).map(it => it.x);
         if (nx.length) { const m = Math.min(...nx) - 2; if (m < xNarr && m > d.x + (d.w || 30) - 4) xNarr = m; } });
-      const xRef = H.ref ? H.ref.x - 9 : Infinity;
+      if (narrRight) xNarr = H.ref ? Math.min(H.ref.x - 9, xNarr) : Math.min(amtStart, xNarr);
+      const xRef = narrRight ? amtStart : H.ref ? H.ref.x - 9 : Infinity;
       const refLike = s => /^([A-Z]{1,6}-|[A-Z]{0,6}-?\d{4,})$/.test(s.trim());
       const col = it => {
         const right = it.x + (it.w || 0), s = it.str.trim();
+        if (narrRight) { if (it.x >= narrStart) return /^(\\+|-)$/.test(s) ? 'other' : 'narr'; if (it.x >= xNarr && it.x < amtStart && !isAmtCol(it)) return 'ref'; }
         if (it.x >= amtStart - 2 && /^(dr|cr)$/i.test(s)) return right > H.bal.x + 4 ? 'bside' : 'side';
         if (isAmtCol(it)) {
           if (right > H.bal.x + 4) return 'bal';
@@ -731,7 +753,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       };
       for (const L of plines) {
         const txt = L.items.map(i => i.str).join(' ');
-        if (/statement summary|end of statement|account summary|^\s*total\b|closing balance/i.test(txt)) { done = true; break; }
+        if (/closing balance/i.test(txt)) { paused = true; break; }   // end of this section; monthly statements may follow with a new header
+        if (/statement summary|end of statement|account summary|^\s*total\b/i.test(txt)) { done = true; break; }
         if (/customer contact cent|you may call|write to us|statement generated on|page \d+ of\b|^\s*page \d+\s*$/i.test(txt)) continue;
         const cells = { date: [], narr: [], ref: [], dr: [], cr: [], amt: [], bal: [], idx: [], other: [], side: [], bside: [] };
         L.items.forEach(it => { if (!isTime(it.str) || it.x >= amtStart) cells[col(it)].push(it.str.trim()); });
@@ -742,7 +765,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         if (cells.date.length) {
           if (cur) rows.push(cur);
           cur = { date: parseDate(cells.date[0]), narr: L.smart ? cells.narr.reduce((x, y) => !x ? y : x + (/[-:\/]$/.test(x) || (/\d$/.test(x) && /^\d{1,2}$/.test(y)) ? '' : ' ') + y, '') : cells.narr.join(' '), ref: cells.ref.join(''),
-            dr: cells.dr.join(''), cr: cells.cr.join(''), amt: cells.amt.join(''), bal: cells.bal.join(''), side: cells.side.join(''), bside: cells.bside.join('') };
+            dr: cells.dr.join(''), cr: cells.cr.join(''), amt: cells.amt.join(''), bal: cells.bal.join(''), side: cells.side.join(''), bside: cells.bside.join(''), nr: narrRight };
         } else if (cur) {
           if (cells.narr.length) cur.narr += (cur.narr.endsWith('-') || /[a-z]$/.test(cur.narr) && /^[a-z]/.test(cells.narr[0]) ? '' : ' ') + cells.narr.join(' ');
           if (cells.ref.length) cur.ref += cells.ref.join('');
@@ -780,7 +803,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (bal) prev = bal.v * (bal.side === 'dr' ? -1 : 1);
       if (amount == null || !r.date) { warnings.push('Skipped unreadable row near ' + (r.date || '?')); return; }
       if (!dir) { dir = 'dr'; warnings.push('Row ' + (i + 1) + ': direction guessed'); }
-      out.push({ date: r.date, desc: r.narr.replace(/\s+/g, ' ').trim(), ref: r.ref.replace(/\s+/g, ''),
+      out.push({ date: r.date, desc: (r.nr ? r.narr.replace(/\\/g, ' ') : r.narr).replace(/\s+/g, ' ').trim(), ref: r.ref.replace(/\s+/g, ''),
         amount, dir, balance: bal ? bal.v : null });
     });
     if (meta.closing == null && prev != null) meta.closing = prev;
@@ -809,7 +832,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.2';
+const APP_VER = '3.3';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -867,12 +890,12 @@ const PAY_MODES = ['UPI', 'Auto-debit', 'Card', 'Net banking', 'Cash', 'NEFT/IMP
 
 /* ---------- built-in categorisation rules (matched on compact upper-case narration) ---------- */
 const RULES_DR = [
-  ['charges', /^CHRG|DCCFEE|ECSRETURN|SMSCHARGE|ANNUALFEE|DEBITCARDFEE|MINBAL/],
+  ['charges', /^CHRG|DCCFEE|ECSRETURN|SMSCHARGE|SMSCHRG|ANNUALFEE|ANNUALCHARGES|ATMANN|DEBITCARDFEE|MINBAL|IMPS-CHG/],
   ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|^MUTUALFUND$|CAMS|KFINTECH|NJINDIA|FDBOOKED|FIXEDDEPOSIT/],
   ['trading', /ZERODHA|DELTAEXCHANGE|UPSTOX|ANGELONE|ANGELBROKING|GROWW|DHAN|FLATTRADE|5PAISA/],
   ['tools', /TRADETRON|ALGOTEST|TICKERTAPE|NEUTRINO|SENSIBULL|STREAK|TRADINGVIEW|OPSTRA|QUANTSAPP|STOCKMOCK/],
   ['taxes', /ETAX|INCOMETAX|CLEARTAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT|^WTAX/],
-  ['wallet', /ADD-MONEY@P|^OSPAYTM|PAYTMWALLET|ADDMONEY/],
+  ['wallet', /ADD-MONEY@P|^OSPAYTM|PAYTMWALLET|ADDMONEY|^ECOM\d*PAYTM$|ONE97COMMUNICATION/],
   ['education', /ACADEMY|INSTITUTE|COLLEGE|UNIVERSITY|\/SCHOOL|COURSE|UDEMY|COURSERA|DGSHIPPING|MARITIMETRAIN/],
   ['insurance', /INSURANC|CAREHEALTH|POLICYBAZAAR|MAXLIFE|LICOFINDIA|HDFCLIFE|ICICIPRU|STARHEALTH|NIVABUPA|ACKO|GODIGIT/],
   ['emi', /\bEMI|EMI\b|LOANREPAY|LOANRECOVERY|LOANAC|BAJAJFIN|HOMELOAN|CARLOAN|AUTOLOAN|VEHICLELOAN|LNREC|LOANINST/],
@@ -903,7 +926,7 @@ const RULES_CR = [
   ['pension', /PENSION|PENSN|PENS\.|SPARSH|CPAO|PPOPEN|PENCR|\/PEN\//],
   ['wages', /NREREM|V\.?SHIPS|SALARY|WAGES|\/SAL\/|SHIPMANAGEMENT|SHIPPING/],
   ['interest', /^SBINT|INT\.?PD|INTEREST|^INT:/],
-  ['refund', /CRADJ|REFUND|REVERSAL|\/REV\/|CASHBACK|^REV|DIFFINSETT|REWARDEDFO|GOOG-PAYMEN|INGENICO/],
+  ['refund', /CRADJ|REFUND|REVERSAL|\/REV\/|CASHBACK|^REV|DIFFINSETT|REWARDEDFO|GOOG-PAYMEN|INGENICO|^RREF|AY20\d\d|ITREFUND|TAXREFUND/],
   ['tradingpay', /ZERODHA|NEUTRINO|DELTAEXCHANGE|UPSTOX|ANGELONE|DHAN|GROWW|FLATTRADE/],
   ['ytincome', /YOUTUBE|ADSENSE|GOOGLEINDIA|TRADETRON/],
 ];
@@ -1034,6 +1057,13 @@ async function changePin(pin) { SALT = crypto.getRandomValues(new Uint8Array(16)
 
 /* ---------- classification ---------- */
 const listOf = s => String(s || '').split(',').map(x => compact(x)).filter(Boolean);
+// a full account number in the narration that ends with one of your other accounts' last 4 digits (e.g. IMPS-OUT/…/KKBK…/9211246450)
+function ownAccIn(prof, t) {
+  if (/-CHG\//i.test(t.desc)) return false;
+  const nums = String(t.desc || '').match(/\d{9,18}/g); if (!nums) return false;
+  const mine = live(prof.accounts).filter(a => a.last4 && a.id !== t.account).map(a => a.last4);
+  return nums.some(n => mine.includes(n.slice(-4)));
+}
 function classify(t, profKey) {
   const prof = P(profKey), st = S.settings;
   const c = compact(t.desc), out = { cat: 'other', conf: 'l', app: null, appConf: null, flags: [] };
@@ -1043,7 +1073,7 @@ function classify(t, profKey) {
   const ur = live(prof.rules).find(r => (!r.dir || r.dir === t.dir) && r.match && c.includes(compact(r.match)));
   // 2. self transfers
   const own = compact(st.ownerMatch);
-  const isSelf = /SENTMONEYTOOWN|RECEIVEDMONEYFROMOWN|FORMUTUALFUND|SWEEPTRANSFER|OWNACCOUNT|^MB:INTERNAL$/.test(c) || (own && c.includes('FUNDTRANSFERFROM' + own)) || (own && /^MB:SENTNEFT|^IB:/.test(c) && c.includes(own));
+  const isSelf = /SENTMONEYTOOWN|RECEIVEDMONEYFROMOWN|FORMUTUALFUND|SWEEPTRANSFER|OWNACCOUNT|^MB:INTERNAL$|^ACXFRFROMSOL/.test(c) || ownAccIn(prof, t) || (own && c.includes('FUNDTRANSFERFROM' + own)) || (own && /^MB:SENTNEFT|^IB:/.test(c) && c.includes(own));
   const first = own ? compact(st.ownerMatch.split(/\s+/)[0]) : '';
   const selfUpi = profKey === 'me' && t.mode === 'UPI' && first && [first, own].includes(compact(t.payee));
   if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
