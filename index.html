@@ -582,7 +582,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '2.6';
+const APP_VER = '2.7';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -622,12 +622,13 @@ const CATS = [
   ['wages', 'Wages', '🚢', 'inc'], ['interest', 'Interest', '🏦', 'inc'], ['tradingpay', 'Trading payout', '💹', 'inc'],
   ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc'], ['refund', 'Refund / cashback', '↩️', 'inc'], ['family', 'Received from family', '👪', 'inc'],
   ['pension', 'Pension', '🧓', 'inc'], ['otherinc', 'Other income', '➕', 'inc'],
+  ['wife', 'ABB', '👩', 'exp'],
   // transfers (excluded from spend/income)
-  ['self', 'Self-transfer', '🔄', 'xfer'], ['wife', 'Sent to Ankita', '👩', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer'],
+  ['self', 'Self-transfer', '🔄', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer'], ['tohusband', 'Sent to Ritesh', '👨', 'xfer'],
   ['friend', 'Friends (lend/borrow)', '🤝', 'xfer'], ['fromson', 'Received from Ritesh', '👨', 'xfer'],
 ];
 const CAT = Object.fromEntries(CATS.map(([id, name, icon, type]) => [id, { id, name, icon, type }]));
-const catName = id => (CAT[id] || CAT.other).name;
+const catName = id => id === 'wife' ? ((typeof S !== 'undefined' && S && S.settings && S.settings.wifeName) || 'ABB') : (CAT[id] || CAT.other).name;
 const catIcon = id => (CAT[id] || CAT.other).icon;
 const catType = id => (CAT[id] || CAT.other).type;
 const CAT_COLORS = ['#22d3ee', '#a3e635', '#f472b6', '#fbbf24', '#a78bfa', '#fb923c', '#4ade80', '#60a5fa', '#f87171', '#2dd4bf', '#e879f9', '#facc15', '#38bdf8', '#c084fc'];
@@ -723,16 +724,16 @@ function seedState() {
   const s = {
     v: 1,
     settings: {
-      meName: 'Ritesh', wifeName: 'Ankita', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '',
+      meName: 'Ritesh', wifeName: 'ABB', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '',
       upiIds: { PhonePe: '', GPay: '', Paytm: '', 'Amazon Pay': '' }, lockMins: 5, theme: 'dark',
       sync: { url: '', key: '', lastAt: null }, remind: [3, 1],
     },
-    profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('Ankita'), parents: EMPTY_PROFILE('Parents') },
+    profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('ABB'), parents: EMPTY_PROFILE('Parents') },
   };
   s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('Cash', 'Cash', 'Cash wallet')];
   s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Papa PNB (pension)')];
   s.profiles.parents.members = [{ id: uid(), role: 'dad', name: 'Papa', phones: [], notes: '', updatedAt: t }, { id: uid(), role: 'mom', name: 'Mummy', phones: [], notes: '', updatedAt: t }];
-  s.profiles.wife.accounts = [acc('SBI', 'Savings', 'Ankita SBI'), acc('Axis', 'Savings', 'Ankita Axis', { status: 'closed' }), acc('Cash', 'Cash', 'Ankita cash')];
+  s.profiles.wife.accounts = [acc('SBI', 'Savings', 'ABB SBI'), acc('Axis', 'Savings', 'ABB Axis', { status: 'closed' }), acc('Cash', 'Cash', 'ABB cash')];
   return s;
 }
 let S = null;          // decrypted state in memory
@@ -778,7 +779,17 @@ async function unlockVault(pin) {
     S = JSON.parse(new TextDecoder().decode(pt)); KEY = k; migrate(); return true;
   } catch (e) { return false; }
 }
-function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); PROFS.forEach(k => { const fresh = !S.profiles[k]; S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k] || d.profiles[k]); if (fresh) S.profiles[k].updatedAt = nowIso(); }); }
+function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); PROFS.forEach(k => { const fresh = !S.profiles[k]; S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k] || d.profiles[k]); if (fresh) S.profiles[k].updatedAt = nowIso(); });
+  if (!S.settings.abbV) { S.settings.abbV = 1;
+    if (!S.settings.wifeName || /^ankita/i.test(S.settings.wifeName)) S.settings.wifeName = 'ABB';
+    const w = S.profiles.wife; if (/^ankita/i.test(w.name || '')) w.name = 'ABB';
+    (w.accounts || []).forEach(a => { if (/ankita/i.test(a.name || '')) { a.name = a.name.replace(/ankita/ig, 'ABB'); touch(a); } });
+    (w.members || []).forEach(m => { if (/^ankita/i.test(m.name || '')) { m.name = 'ABB'; touch(m); } });
+    const wm = listOf(S.settings.wifeMatch);
+    live(S.profiles.me.txns || []).forEach(t => { if (t.dir === 'cr' && !t.reviewed && ['other', 'otherinc', 'family'].includes(t.cat) && wm.some(x => compact(t.desc).includes(x))) { t.cat = 'wife'; touch(t); } });
+    live(w.txns || []).forEach(t => { if (t.dir === 'dr' && !t.reviewed && catType(t.cat) === 'exp' && listOf(S.settings.husbandMatch).some(x => compact(t.desc).includes(x))) { t.cat = 'tohusband'; touch(t); } });
+  }
+}
 let saveTimer = null;
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(() => persist(), 250); }
 async function persist() {
@@ -808,9 +819,10 @@ function classify(t, profKey) {
   const selfUpi = profKey === 'me' && t.mode === 'UPI' && first && [first, own].includes(compact(t.payee));
   if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
   else if ((isSelf || selfUpi) && profKey === 'me') { out.cat = 'self'; out.conf = 'h'; }
-  else if (profKey === 'me' && t.dir === 'dr' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
+  else if (profKey === 'me' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
   else if (profKey === 'me' && t.dir === 'dr' && listOf(st.parentsMatch).some(w => w.length >= 4 && c.includes(w))) { out.cat = 'parents'; out.conf = 'h'; out.for = 'parents'; }
   else if (profKey === 'wife' && t.dir === 'cr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'fromhusband'; out.conf = 'h'; }
+  else if (profKey === 'wife' && t.dir === 'dr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'tohusband'; out.conf = 'h'; }
   else if (profKey === 'parents' && t.dir === 'cr' && own && (c.includes(own) || listOf(st.husbandMatch).some(w => c.includes(w)))) { out.cat = 'fromson'; out.conf = 'h'; }
   else if (profKey === 'parents' && t.dir === 'dr' && (live(prof.loans || []).find(l => l.match && c.includes(compact(l.match))))) { const l = live(prof.loans).find(l => l.match && c.includes(compact(l.match))); out.cat = 'emi'; out.conf = 'h'; out.loanId = l.id; }
   else {
@@ -843,7 +855,7 @@ function classify(t, profKey) {
 }
 function matchFriend(prof, c) { return live(prof.friends).find(f => (f.aliases || [f.name]).map(compact).filter(a => a.length >= 4).some(a => c.includes(a))); }
 function looksLikePerson(t) {
-  if (['self', 'wife', 'fromhusband', 'friend', 'wages', 'interest'].includes(t.cat)) return false;
+  if (['self', 'wife', 'fromhusband', 'tohusband', 'friend', 'wages', 'interest'].includes(t.cat)) return false;
   if (!['IMPS', 'NEFT', 'UPI', 'Mobile banking'].includes(t.mode)) return false;
   if (t.cat !== 'other' && t.cat !== 'otherinc') return false;
   const p = (t.payee || '').trim();
@@ -951,6 +963,8 @@ function accountBalance(profKey, accId) {
 /* ---------- sync (manual, via the user's own Google Apps Script) ---------- */
 const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans'];
 const PROFS = ['me', 'wife', 'parents'];
+// money moving inside the household (not real spending when both profiles are combined)
+const hhSkip = t => catType(t.cat) === 'xfer' || t.cat === 'wife';
 function unsyncedCount() {
   const since = S.settings.sync.lastAt || '';
   let n = 0; PROFS.forEach(k => COLL.forEach(c => { n += (P(k)[c] || []).filter(r => (r.updatedAt || '') > since).length; }));
@@ -1039,14 +1053,29 @@ const NAV = [
   ['sec', 'Overview'], ['dashboard', 'Dashboard', '🏠'], ['upcoming', 'Upcoming', '📅'],
   ['sec', 'Payments'], ['bills', 'Bills', '🧾'], ['fixed', 'Fixed payments', '🔒'], ['subs', 'Subscriptions', '🔁'], ['money', 'Money', '💰'],
   ['sec', 'Planning'], ['plan', 'Budgets & Goals', '🎯'], ['worth', 'Net worth', '💎'],
-  ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'Ankita', '👩'], ['parents', 'Parents', '👪'], ['contacts', 'Numbers & Emails', '📇'],
+  ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'ABB', '👩'], ['parents', 'Parents', '👪'], ['contacts', 'Numbers & Emails', '📇'],
   ['sec', 'Records'], ['calendar', 'Calendar', '🗓️'], ['history', 'History', '📜'], ['reports', 'Reports', '📊'],
   ['sec', ''], ['settings', 'Settings', '⚙️'],
 ];
-const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents', contacts: 'Numbers & Emails', fixed: 'Fixed payments' };
+const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'ABB', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents', contacts: 'Numbers & Emails', fixed: 'Fixed payments' };
 
 function toast(msg, ms = 2600) { $$('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
-function wifeName() { return S.settings.wifeName || 'Ankita'; }
+function wifeName() { return S.settings.wifeName || 'ABB'; }
+// show "ABB" instead of her real name wherever bank text is displayed (stored text stays as-is for matching)
+function maskWife(s) {
+  if (!s || !S || !S.settings) return s;
+  const first = [...new Set(String(S.settings.wifeMatch || '').toUpperCase().split(',').map(x => x.trim().split(/\s+/)[0]).filter(w => w && w.length >= 4))];
+  if (!first.length) return s;
+  const toks = String((S.settings.wifeMatch || '') + ' ' + (S.settings.ownerMatch || '').split(/\s+/).slice(1).join(' ')).toUpperCase().split(/[\s,]+/).filter(w => w.length >= 3);
+  const parts = String(s).split(/([A-Za-z]+)/); let out = '', run = false;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i], isW = i % 2 === 1, U = p.toUpperCase();
+    if (!isW) { if (run && /^\s+$/.test(p) && i + 1 < parts.length && parts[i + 1].length >= 2 && toks.some(t => t.startsWith(parts[i + 1].toUpperCase()) || parts[i + 1].toUpperCase().startsWith(t))) continue; run = false; out += p; continue; }
+    if (run) continue;
+    if (first.some(f => U.startsWith(f))) { out += wifeName(); run = true; } else out += p;
+  }
+  return out;
+}
 
 /* ---------- modal ---------- */
 let MODAL_CB = null;
@@ -1164,7 +1193,7 @@ function rerender() { VIEW.keepScroll = true; render(); }
 /* ---------- reusable bits ---------- */
 const accName = (profKey, id) => { const a = P(profKey).accounts.find(x => x.id === id); return a ? a.name : '—'; };
 function accOptions(profKey, sel, withNone = true) { return (withNone ? `<option value="">—</option>` : '') + P(profKey).accounts.filter(a => !a.deleted).map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.name)}${a.last4 ? ' ··' + a.last4 : ''}${a.status === 'closed' ? ' (closed)' : ''}</option>`).join(''); }
-function catOptions(sel, types = ['exp', 'inv', 'inc', 'xfer']) { return types.map(ty => `<optgroup label="${{ exp: 'Expenses', inv: 'Investments (not counted as spending)', inc: 'Income', xfer: 'Transfers (not counted)' }[ty]}">` + CATS.filter(c => c[3] === ty).map(c => `<option value="${c[0]}" ${c[0] === sel ? 'selected' : ''}>${c[2]} ${c[1]}</option>`).join('') + '</optgroup>').join(''); }
+function catOptions(sel, types = ['exp', 'inv', 'inc', 'xfer']) { return types.map(ty => `<optgroup label="${{ exp: 'Expenses', inv: 'Investments (not counted as spending)', inc: 'Income', xfer: 'Transfers (not counted)' }[ty]}">` + CATS.filter(c => c[3] === ty).map(c => `<option value="${c[0]}" ${c[0] === sel ? 'selected' : ''}>${c[2]} ${c[1]}</option>`).join('') + '</optgroup>').join('') + (types.includes('exp') ? '' : `<optgroup label="${esc(wifeName())}"><option value="wife" ${sel === 'wife' ? 'selected' : ''}>👩 Received from ${esc(wifeName())} (reduces ${esc(wifeName())} expense)</option></optgroup>`); }
 function appOptions(sel) { return `<option value="">Unknown</option>` + UPI_APPS.map(a => `<option ${a === sel ? 'selected' : ''}>${a}</option>`).join(''); }
 function kpi(lab, val, foot, cls = '') { return `<div class="card kpi ${cls}"><div class="lab">${lab}</div><div class="val num">${val}</div>${foot ? `<div class="foot">${foot}</div>` : ''}</div>`; }
 function amtCell(t) { return `<span class="num b ${t.dir === 'dr' ? 'dr' : 'cr'}">${t.dir === 'dr' ? '−' : '+'}${rs(t.amount, true).replace('₹', '₹')}</span>`; }
@@ -1192,7 +1221,7 @@ VIEWS.dashboard = () => {
   const paidThisMonth = bills.concat(live(me.bills).filter(b => b.status !== 'active')).flatMap(b => (b.payments || []).filter(p => ym(p.date) === ym(td)));
   const subsYear = live(me.bills).filter(b => b.kind === 'sub' && b.status === 'active').reduce((s, b) => s + monthlyEq(b) * 12, 0);
   const tx = txIn('me', mf, mt), T = totals(tx);
-  const toWife = tx.filter(t => t.cat === 'wife' && t.dir === 'dr').reduce((s, t) => s + t.amount, 0);
+  const toWife = tx.filter(t => t.cat === 'wife').reduce((s, t) => s + (t.dir === 'dr' ? t.amount : -t.amount), 0);
   const review = live(me.txns).filter(needsReview).length;
   const soon = bills.flatMap(b => occurrences(b, td, addDays(td, 21)).slice(0, 1).map(d => ({ b, d }))).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 8);
   const fr = live(me.friends), toRecv = fr.reduce((s, f) => s + Math.max(0, friendBalance(f)), 0), toPay = fr.reduce((s, f) => s + Math.max(0, -friendBalance(f)), 0);
@@ -1219,7 +1248,7 @@ VIEWS.dashboard = () => {
     ${kpi('⬇️ Income', rs(T.inc), 'Wages, interest, payouts', 'grn')}
     ${kpi('⬆️ Spent', rs(T.exp), 'Excludes transfers' + (T.inv ? ' · ' + rsShort(T.inv) + ' invested' : ''), 'red')}
     ${kpi('💾 Savings rate', T.rate == null ? '—' : Math.round(T.rate * 100) + '%', 'Net ' + rs(T.net))}
-    ${kpi('👩 Sent to ' + esc(wifeName()), rs(toWife), '<a href="#" data-act="go" data-tab="wife">See where it went →</a>')}
+    ${kpi('👩 ' + esc(wifeName()) + ' (net)', rs(toWife), '<a href="#" data-act="go" data-tab="wife">Sent vs received →</a>')}
   </div>
   <div class="grid g21 mt">
     <div class="card"><h3>📌 Due soon <small>next 3 weeks</small><span class="sp"></span><button class="btn sm ghost" data-act="go" data-tab="upcoming">All →</button></h3>
@@ -1330,7 +1359,7 @@ function txnsPanel(profKey) {
   if (F.q) { const q = F.q.toLowerCase(); arr = arr.filter(t => (t.desc + ' ' + (t.note || '') + ' ' + t.amount).toLowerCase().includes(q)); }
   arr.sort((a, b) => b.date.localeCompare(a.date) || (b.seq || 0) - (a.seq || 0));
   const T = totals(arr), lim = VIEW.sub['lim_' + profKey] || 150;
-  const rows = arr.slice(0, lim).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="${profKey}"><td class="num" style="white-space:nowrap">${fmtDate(t.date)}</td><td><div class="b" style="white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(t.payee || t.desc)}</div><div class="muted small" style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.note || t.remark || t.desc)}</div></td><td class="small">${esc(accName(profKey, t.account))}</td><td>${catPill(t.cat)}${needsReview(t) ? ' <span class="conf m" title="Needs check"></span>' : ''}</td><td>${appPill(t)}</td><td class="ra">${amtCell(t)}</td></tr>`).join('');
+  const rows = arr.slice(0, lim).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="${profKey}"><td class="num" style="white-space:nowrap">${fmtDate(t.date)}</td><td><div class="b" style="white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(maskWife(t.payee || t.desc))}</div><div class="muted small" style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.note || t.remark || t.desc)}</div></td><td class="small">${esc(accName(profKey, t.account))}</td><td>${catPill(t.cat)}${needsReview(t) ? ' <span class="conf m" title="Needs check"></span>' : ''}</td><td>${appPill(t)}</td><td class="ra">${amtCell(t)}</td></tr>`).join('');
   return `<div class="filters">
     <input class="inp" placeholder="🔎 Search narration, note, amount" value="${esc(F.q)}" data-act="flt" data-k="q" data-prof="${profKey}" style="min-width:220px">
     <select class="inp" data-act="flt" data-k="m" data-prof="${profKey}"><option value="">All months</option>${months.map(k => `<option value="${k}" ${F.m === k ? 'selected' : ''}>${ymLabel(k)}</option>`).join('')}</select>
@@ -1352,7 +1381,7 @@ function reviewPanel(profKey) {
   return `<div class="alert acc">🔎 <div>Pick the right category (and the UPI app <i>you</i> paid from). With <b>Remember</b> ticked, future payments to the same payee are tagged automatically.</div></div>
   <div class="flex" style="margin-bottom:10px"><span class="muted small">${arr.length} to check</span><span class="sp"></span><button class="btn sm" data-act="reviewAll" data-prof="${profKey}">Mark all as checked</button></div>
   <div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Payee / narration</th><th class="ra">Amount</th><th>Category</th><th>UPI app</th><th>Remember</th><th></th></tr></thead><tbody>
-  ${arr.slice(0, 200).map(t => `<tr data-row="${t.id}"><td class="num" style="white-space:nowrap">${fmtDate(t.date)}</td><td><div class="b">${esc(t.payee)}</div><div class="muted small" style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(t.desc)}">${esc(t.desc)}</div></td><td class="ra">${amtCell(t)}</td>
+  ${arr.slice(0, 200).map(t => `<tr data-row="${t.id}"><td class="num" style="white-space:nowrap">${fmtDate(t.date)}</td><td><div class="b">${esc(maskWife(t.payee))}</div><div class="muted small" style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(maskWife(t.desc))}">${esc(maskWife(t.desc))}</div></td><td class="ra">${amtCell(t)}</td>
   <td><select class="inp" style="min-width:170px" data-rv="cat">${catOptions(t.cat, t.dir === 'dr' ? ['exp', 'inv', 'xfer'] : ['inc', 'inv', 'xfer'])}</select></td>
   <td>${t.mode === 'UPI' && t.dir === 'dr' ? `<select class="inp" data-rv="app">${appOptions(t.app)}</select>` : '<span class="muted small">—</span>'}</td>
   <td><label class="chk"><input type="checkbox" data-rv="rem" checked></label></td><td><button class="btn sm pri" data-act="reviewSave" data-id="${t.id}" data-prof="${profKey}">✓</button></td></tr>`).join('')}
@@ -1459,7 +1488,7 @@ function importPreview() {
   <div class="frow"><div class="fld"><label>Import into account</label><select class="inp" id="ip_acc">${accOptions(I.profKey, I.accId)}<option value="__new">＋ New account…</option></select></div>
   ${last4 ? `<div class="fld"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="ip_link" checked> Remember: account ending ${esc(last4)} = this account</label></div>` : ''}</div>
   <div class="tblw" style="max-height:52vh"><table class="t"><thead><tr><th><input type="checkbox" id="ip_all" checked></th><th>Date</th><th>Narration</th><th class="ra">Amount</th><th>Category</th><th>UPI app</th><th></th></tr></thead><tbody>
-  ${I.rows.map((r, i) => [r, i]).sort((x, y) => (x[0].dup === 'maybe' ? 0 : 1) - (y[0].dup === 'maybe' ? 0 : 1) || x[1] - y[1]).map(([r, i]) => `<tr style="${r.dup && r.action === 'skip' ? 'opacity:.5' : ''}${r.dup === 'maybe' ? ';background:var(--ambbg)' : ''}"><td><input type="checkbox" data-ip="${i}" ${r.sel ? 'checked' : ''}></td><td class="num" style="white-space:nowrap">${fmtDateShort(r.date)}</td><td class="desc" title="${esc(r.desc)}">${esc(r.desc)}</td><td class="ra">${amtCell(r)}</td><td><select class="inp" style="padding:4px 6px;min-width:150px" data-ipc="${i}">${catOptions(r.cat, r.dir === 'dr' ? ['exp', 'inv', 'xfer'] : ['inc', 'inv', 'xfer'])}</select></td><td>${r.mode === 'UPI' && r.dir === 'dr' ? `<span class="conf ${r.appConf || 'l'}"></span> ${esc(r.app || '?')}` : `<span class="muted small">${esc(r.mode)}</span>`}</td><td>${dupRowCell(r, i)}</td></tr>`).join('')}
+  ${I.rows.map((r, i) => [r, i]).sort((x, y) => (x[0].dup === 'maybe' ? 0 : 1) - (y[0].dup === 'maybe' ? 0 : 1) || x[1] - y[1]).map(([r, i]) => `<tr style="${r.dup && r.action === 'skip' ? 'opacity:.5' : ''}${r.dup === 'maybe' ? ';background:var(--ambbg)' : ''}"><td><input type="checkbox" data-ip="${i}" ${r.sel ? 'checked' : ''}></td><td class="num" style="white-space:nowrap">${fmtDateShort(r.date)}</td><td class="desc" title="${esc(maskWife(r.desc))}">${esc(maskWife(r.desc))}</td><td class="ra">${amtCell(r)}</td><td><select class="inp" style="padding:4px 6px;min-width:150px" data-ipc="${i}">${catOptions(r.cat, r.dir === 'dr' ? ['exp', 'inv', 'xfer'] : ['inc', 'inv', 'xfer'])}</select></td><td>${r.mode === 'UPI' && r.dir === 'dr' ? `<span class="conf ${r.appConf || 'l'}"></span> ${esc(r.app || '?')}` : `<span class="muted small">${esc(r.mode)}</span>`}</td><td>${dupRowCell(r, i)}</td></tr>`).join('')}
   </tbody></table></div><div class="small muted mt"><span class="conf h"></span> sure &nbsp; <span class="conf m"></span> likely &nbsp; <span class="conf l"></span> needs your check (goes to Review)</div>`;
   modal('Import preview — ' + esc(I.file), body, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ip_go">Import ${I.rows.filter(r => r.sel).length} entries</button>`, {
     wide: true, sticky: true, onMount: m => {
@@ -1522,8 +1551,8 @@ VIEWS.friends = () => {
   ${fr.length ? `<div class="grid g4">${cards}</div>` : `<div class="card">${emptyBox('🤝', 'No friends added yet', 'Add a friend, then link their bank transfers below — or add cash entries by hand.')}</div>`}
   ${sugg.length ? `<div class="sec">Possible friend transfers <span class="muted small" style="text-transform:none;letter-spacing:0">— transfers to/from people found in your statements</span></div>
   <div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Person (as in bank)</th><th class="ra">Amount</th><th>Link to</th><th>Type</th><th></th></tr></thead><tbody>
-  ${sugg.slice(0, 60).map(t => `<tr data-row="${t.id}"><td class="num">${fmtDate(t.date)}</td><td><div class="b">${esc(t.payee)}</div><div class="muted small">${esc(t.mode)}</div></td><td class="ra">${amtCell(t)}</td>
-  <td><select class="inp" data-fs="who"><option value="">Choose…</option>${fr.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')}<option value="__new">＋ New friend “${esc(t.payee)}”</option></select></td>
+  ${sugg.slice(0, 60).map(t => `<tr data-row="${t.id}"><td class="num">${fmtDate(t.date)}</td><td><div class="b">${esc(maskWife(t.payee))}</div><div class="muted small">${esc(t.mode)}</div></td><td class="ra">${amtCell(t)}</td>
+  <td><select class="inp" data-fs="who"><option value="">Choose…</option>${fr.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')}<option value="__new">＋ New friend “${esc(maskWife(t.payee))}”</option></select></td>
   <td><select class="inp" data-fs="type">${Object.entries(FTYPES).filter(([k, v]) => v[2] === (t.dir === 'dr' ? 'cr' : 'dr') || true).filter(([k]) => t.dir === 'dr' ? ['lent', 'returned'].includes(k) : ['recvback', 'borrowed'].includes(k)).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></td>
   <td class="ra" style="white-space:nowrap"><button class="btn sm pri" data-act="friendLink" data-id="${t.id}">Link</button> <button class="btn sm ghost" data-act="notFriend" data-id="${t.id}">Not a friend</button></td></tr>`).join('')}
   </tbody></table></div>` : ''}`;
@@ -1570,37 +1599,42 @@ function friendEdit(fid, preset) {
   });
 }
 
-/* ---------- Ankita ---------- */
+/* ---------- ABB (wife) ---------- */
 VIEWS.wife = () => {
   const { sub, html } = moneyTabs('wife', 'wife');
   if (sub !== 'overview') return html + moneyPanel('wife', sub);
+  const W = esc(wifeName());
   const per = VIEW.sub.wPer || 'all';
   const td = today(); let from, to, lab;
-  if (per === 'month') { [from, to] = monthRange(VIEW.sub.wMonth || latestDataMonth(['me', 'wife'])); lab = ymLabel(ym(from)); }
-  else if (per === '3m') { const e = latestDataMonth(['me', 'wife']); from = monthRange(lastMonths(e, 3)[0])[0]; to = monthRange(e)[1]; lab = 'Last 3 months'; }
+  if (per === 'month') { [from, to] = monthRange(VIEW.sub.wMonth || latestDataMonth(['me'])); lab = ymLabel(ym(from)); }
+  else if (per === '3m') { const e = latestDataMonth(['me']); from = monthRange(lastMonths(e, 3)[0])[0]; to = monthRange(e)[1]; lab = 'Last 3 months'; }
   else if (per === 'fy') { const d = parseISO(td); const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; [from, to] = fyRange(y); lab = fyOf(td); }
   else { from = '2000-01-01'; to = '2099-12-31'; lab = 'All time'; }
-  const sentTx = txIn('me', from, to).filter(t => t.cat === 'wife' && t.dir === 'dr');
-  const sent = sentTx.reduce((s, t) => s + t.amount, 0);
-  const wtx = txIn('wife', from, to), WT = totals(wtx);
-  const recv = wtx.filter(t => t.cat === 'fromhusband').reduce((s, t) => s + t.amount, 0);
-  const cats = catItems(wtx);
+  // 1. money between you and ABB — from YOUR statements only
+  const mv = txIn('me', from, to).filter(t => t.cat === 'wife');
+  const sentTx = mv.filter(t => t.dir === 'dr'), recvTx = mv.filter(t => t.dir === 'cr');
+  const sent = sentTx.reduce((s, t) => s + t.amount, 0), recv = recvTx.reduce((s, t) => s + t.amount, 0), net = sent - recv;
+  const last12 = lastMonths(latestDataMonth(['me']), 12);
+  const mSent = k => txIn('me', ...monthRange(k)).filter(t => t.cat === 'wife' && t.dir === 'dr').reduce((s, t) => s + t.amount, 0);
+  const mRecv = k => txIn('me', ...monthRange(k)).filter(t => t.cat === 'wife' && t.dir === 'cr').reduce((s, t) => s + t.amount, 0);
   const purposes = sumBy(sentTx, t => t.note || 'Not specified');
-  const hasHer = live(P('wife').txns).length > 0;
-  const flowTotal = Math.max(sent, WT.exp, 1);
-  const flow = hasHer ? `<div class="flow">${cats.slice(0, 7).map(c => `<div style="width:${c.value / flowTotal * 100}%;background:${c.color}" title="${esc(c.label)} ${rs(c.value)}">${c.value / flowTotal > .08 ? esc(c.label.split(' ').slice(1, 2).join(' ')) : ''}</div>`).join('')}${sent > WT.exp ? `<div style="flex:1;background:var(--card2);color:var(--tx2)">Unspent</div>` : ''}</div>` : '';
-  const last12 = lastMonths(latestDataMonth(['me', 'wife']), 12);
+  // 2. her own statement (optional) — stays inside this tab
+  const wtx = txIn('wife', from, to), hasHer = live(P('wife').txns).length > 0;
+  const herCats = catItems(wtx), herExp = totals(wtx).exp;
+  const herMonths = monthsWithData(['wife']);
+  const lastUp = live(P('wife').txns).map(t => t.date).sort().pop();
+  const rows = mv.sort((a, b) => b.date.localeCompare(a.date)).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td style="white-space:nowrap">${fmtDate(t.date)}</td><td>${t.dir === 'dr' ? '<span class="pill red">You → ' + W + '</span>' : '<span class="pill grn">' + W + ' → You</span>'}</td><td>${esc(accName('me', t.account))}</td><td>${t.mode === 'UPI' ? esc(t.app || 'UPI') : esc(t.mode || '')}</td><td>${esc(t.note || t.remark || '—')}</td><td class="ra num b ${t.dir === 'dr' ? 'dr' : 'cr'}">${t.dir === 'dr' ? '−' : '+'}${rs(t.amount)}</td></tr>`).join('');
   return html + `<div class="flex" style="margin-bottom:14px"><div class="seg">${[['month', 'Month'], ['3m', '3 months'], ['fy', 'This FY'], ['all', 'All time']].map(([k, l]) => `<button class="${per === k ? 'on' : ''}" data-act="wPer" data-p="${k}">${l}</button>`).join('')}</div>
-  ${per === 'month' ? `<select class="inp" style="width:auto" data-act="wMonth">${monthsWithData(['me', 'wife']).map(k => `<option value="${k}" ${ym(from) === k ? 'selected' : ''}>${ymLabel(k)}</option>`).join('')}</select>` : ''}<span class="sp"></span><span class="muted small">${esc(lab)}</span></div>
-  <div class="grid g4">${kpi('💸 You sent', rs(sent), sentTx.length + ' transfers', 'acc')}${kpi('👛 ' + esc(wifeName()) + ' spent', hasHer ? rs(WT.exp) : '—', hasHer ? 'from her statement' : 'Import her statement', 'red')}${kpi('➕ Her own income', hasHer ? rs(WT.inc) : '—', 'other than your transfers', 'grn')}${kpi('🧮 Given − spent', hasHer ? rs(sent + WT.inc - WT.exp) : '—', hasHer ? (sent + WT.inc - WT.exp >= 0 ? 'Left in her account' : 'Spent more than received') : '')}</div>
-  ${!hasHer ? `<div class="alert acc mt">📄 <div>Import ${esc(wifeName())}'s SBI statement to see exactly where the money went. Until then, this page shows what you sent and the purpose you wrote on each transfer.</div><span class="sp"></span><button class="btn sm pri" data-act="subTab" data-base="wife" data-sub="import">Import her statement</button></div>` : `<div class="card mt"><h3>🔀 Where the money went <small>you sent ${rs(sent)} · she spent ${rs(WT.exp)}</small></h3>${flow}</div>`}
-  <div class="grid g2 mt">
-    <div class="card"><h3>🍩 ${esc(wifeName())}'s spending by category</h3>${hasHer ? donut(cats, 'Spent', WT.exp) : emptyBox('📄', 'No statement yet', '')}</div>
-    <div class="card"><h3>🏷️ Purpose of your transfers</h3>${hbars(Object.entries(purposes).sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ label: k, value: v, color: CAT_COLORS[i % CAT_COLORS.length] })))}
-    <div class="small muted">Taken from the remark you typed (e.g. HOME EXPE / HOME RENT). Edit any transfer to change its note.</div></div>
-  </div>
-  <div class="card mt"><h3>📊 Sent vs spent <small>12 months</small></h3>${barChart(last12.map(ymLabel), [{ name: 'You sent', color: 'var(--c1)', values: last12.map(k => txIn('me', ...monthRange(k)).filter(t => t.cat === 'wife').reduce((s, t) => s + t.amount, 0)) }, { name: esc(wifeName()) + ' spent', color: 'var(--c3)', values: last12.map(k => totals(txIn('wife', ...monthRange(k))).exp) }])}</div>
-  <div class="card mt"><h3>📜 Your transfers to ${esc(wifeName())}</h3>${sentTx.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>From account</th><th>Purpose</th><th class="ra">Amount</th></tr></thead><tbody>${sentTx.sort((a, b) => b.date.localeCompare(a.date)).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td>${fmtDate(t.date)}</td><td>${esc(accName('me', t.account))}</td><td>${esc(t.note || t.remark || '—')}</td><td class="ra num b">${rs(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No transfers in this period. Transfers are recognised by the name set in Settings (currently: ' + esc(S.settings.wifeMatch) + ').</div>'}</div>`;
+  ${per === 'month' ? `<select class="inp" style="width:auto" data-act="wMonth">${monthsWithData(['me']).map(k => `<option value="${k}" ${ym(from) === k ? 'selected' : ''}>${ymLabel(k)}</option>`).join('')}</select>` : ''}<span class="sp"></span><span class="muted small">${esc(lab)}</span></div>
+  <div class="grid g3">${kpi('💸 You sent ' + W, rs(sent), sentTx.length + ' transfers', 'red')}${kpi('↩️ ' + W + ' sent you', rs(recv), recvTx.length + ' transfers', 'grn')}${kpi('🧮 Net — your ' + W + ' expense', rs(net), 'counted in your spending', 'vio')}</div>
+  <div class="card mt"><h3>📊 Sent vs received <small>12 months · from your statements</small></h3>${barChart(last12.map(ymLabel), [{ name: 'You sent', color: 'var(--c1)', values: last12.map(mSent) }, { name: W + ' sent you', color: 'var(--c3)', values: last12.map(mRecv) }])}</div>
+  <div class="card mt"><h3>📜 Money between you and ${W} <small>${mv.length} entries</small></h3>${rows ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Direction</th><th>Your account</th><th>Paid via</th><th>Purpose</th><th class="ra">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="muted small">No transfers in this period. Transfers are recognised by the name set in Settings (currently: ' + esc(S.settings.wifeMatch) + ').</div>'}</div>
+  ${sentTx.length ? `<div class="card mt"><h3>🏷️ Purpose of your transfers</h3>${hbars(Object.entries(purposes).sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ label: k, value: v, color: CAT_COLORS[i % CAT_COLORS.length] })))}<div class="small muted">From the remark on each transfer. Tap a transfer above to change its note.</div></div>` : ''}
+  <div class="card mt"><h3>📄 ${W}'s statement <small>optional · only shown here</small></h3>
+  ${hasHer ? `<div class="small muted" style="margin-bottom:10px">Uploaded up to ${fmtDate(lastUp)} · ${herMonths.length} month(s). This never changes your dashboard, spending or reports.</div>
+    <div class="grid g2"><div>${herCats.length ? donut(herCats, 'Spent', herExp) : emptyBox('📄', 'No spending in this period', '')}</div><div>${hbars(herCats.slice(0, 8))}</div></div>
+    <div class="flex mt"><button class="btn sm" data-act="subTab" data-base="wife" data-sub="txns">See her entries</button><button class="btn sm pri" data-act="subTab" data-base="wife" data-sub="import">⬆ Upload another statement</button></div>`
+  : `<div class="alert acc">📄 <div>Upload ${W}'s statement whenever you have one — it shows where her money went, by category, inside this tab only.</div><span class="sp"></span><button class="btn sm pri" data-act="subTab" data-base="wife" data-sub="import">Upload statement</button></div>`}</div>`;
 };
 
 /* ---------- Calendar ---------- */
@@ -1658,14 +1692,14 @@ VIEWS.reports = () => {
   let from, to;
   if (per.startsWith('FY')) { const y = +per.slice(3, 7); [from, to] = fyRange(y); } else if (per === '12m') { const e = latestDataMonth(profs); from = monthRange(lastMonths(e, 12)[0])[0]; to = monthRange(e)[1]; } else[from, to] = monthRange(per);
   let tx = profs.flatMap(k => txIn(k, from, to).map(t => ({ ...t, _p: k })));
-  if (who === 'house') tx = tx.filter(t => catType(t.cat) !== 'xfer');
+  if (who === 'house') tx = tx.filter(t => !hhSkip(t));
   const T = totals(tx), cats = catItems(tx);
   const endK = to > today() ? latestDataMonth(profs) : ym(to);
-  const l12 = lastMonths(endK, 12), ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || catType(t.cat) !== 'xfer')));
+  const l12 = lastMonths(endK, 12), ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || !hhSkip(t))));
   const upi = tx.filter(t => t.mode === 'UPI' && t.dir === 'dr' && catType(t.cat) === 'exp');
   const apps = Object.entries(sumBy(upi, t => t.app || 'Unknown')).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: v, color: APP_COLOR[k] || '#64748b' }));
   const modes = Object.entries(sumBy(tx.filter(t => t.dir === 'dr' && catType(t.cat) === 'exp'), t => t.mode || 'Other')).sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ label: k, value: v, color: CAT_COLORS[i % CAT_COLORS.length] }));
-  const payees = Object.entries(sumBy(tx.filter(t => t.dir === 'dr' && catType(t.cat) === 'exp'), t => t.payee || '—')).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const payees = Object.entries(sumBy(tx.filter(t => t.dir === 'dr' && catType(t.cat) === 'exp'), t => maskWife(t.payee) || '—')).sort((a, b) => b[1] - a[1]).slice(0, 10);
   const trans = ['cab', 'bus', 'ferry', 'fuel'].map((c, i) => ({ label: catIcon(c) + ' ' + catName(c).replace('Transport · ', ''), value: tx.filter(t => t.cat === c && t.dir === 'dr').reduce((s, t) => s + t.amount, 0), color: CAT_COLORS[i] })).filter(x => x.value);
   const util = ['electricity', 'gas', 'phone', 'dth', 'wifi'];
   const l6 = lastMonths(endK, 6);
@@ -1779,14 +1813,14 @@ function txnModal(profKey, id) {
   const prof = P(profKey), t = prof.txns.find(x => x.id === id); if (!t) return;
   const isUpiOut = t.mode === 'UPI' && t.dir === 'dr';
   const fr = live(prof.friends);
-  modal('Entry details', `<div class="flex" style="margin-bottom:12px"><div><div class="b" style="font-size:16px">${esc(t.payee || '—')}</div><div class="muted small">${fmtDate(t.date)} · ${esc(accName(profKey, t.account))} · ${esc(t.mode || '')}</div></div><span class="sp"></span><div style="font-size:20px">${amtCell(t)}</div></div>
-  <div class="code" style="white-space:pre-wrap;margin-bottom:14px">${esc(t.desc)}${t.ref ? '\nRef: ' + esc(t.ref) : ''}${t.balance != null ? '\nBalance after: ' + rs(t.balance, true) : ''}${t.tax ? '\nInterest ' + rs(t.gross, true) + ' − TDS ' + rs(t.tax, true) : ''}</div>
+  modal('Entry details', `<div class="flex" style="margin-bottom:12px"><div><div class="b" style="font-size:16px">${esc(maskWife(t.payee || '—'))}</div><div class="muted small">${fmtDate(t.date)} · ${esc(accName(profKey, t.account))} · ${esc(t.mode || '')}</div></div><span class="sp"></span><div style="font-size:20px">${amtCell(t)}</div></div>
+  <div class="code" style="white-space:pre-wrap;margin-bottom:14px">${esc(maskWife(t.desc))}${t.ref ? '\nRef: ' + esc(t.ref) : ''}${t.balance != null ? '\nBalance after: ' + rs(t.balance, true) : ''}${t.tax ? '\nInterest ' + rs(t.gross, true) + ' − TDS ' + rs(t.tax, true) : ''}</div>
   <div class="frow"><div class="fld"><label>Category</label><select class="inp" id="t_cat">${catOptions(t.cat)}</select></div>
   ${isUpiOut ? `<div class="fld"><label>Paid from UPI app</label><select class="inp" id="t_app">${appOptions(t.app)}</select></div>` : ''}
   ${profKey === 'me' ? `<div class="fld" id="t_frw" style="${t.cat === 'friend' ? '' : 'display:none'}"><label>Friend</label><select class="inp" id="t_fr"><option value="">Choose…</option>${fr.map(f => `<option value="${f.id}" ${t.friendId === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div>` : ''}</div>
   <div class="fld" style="margin-bottom:12px"><label>Note</label><input class="inp" id="t_note" value="${esc(t.note || '')}" placeholder="${esc(t.remark || 'What was it for?')}"></div>
   ${profKey === 'me' && t.dir === 'dr' ? `<label class="chk" style="margin-bottom:8px"><input type="checkbox" id="t_par" ${t.for === 'parents' ? 'checked' : ''}> 👪 Paid for ${esc(S.settings.parentsName || 'Parents')}</label>` : ''}
-  ${t.payee && t.payee.length >= 3 ? `<label class="chk"><input type="checkbox" id="t_rule"> Always use this category${profKey === 'me' && t.dir === 'dr' ? ' (and “for” tag)' : ''} for “${esc(t.payee)}”</label>` : ''}
+  ${t.payee && t.payee.length >= 3 ? `<label class="chk"><input type="checkbox" id="t_rule"> Always use this category${profKey === 'me' && t.dir === 'dr' ? ' (and “for” tag)' : ''} for “${esc(maskWife(t.payee))}”</label>` : ''}
   ${isUpiOut ? `<label class="chk mt"><input type="checkbox" id="t_appr" checked> Remember the app for this payee</label>` : ''}`,
     `<button class="btn dan" id="t_del">Delete</button><span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="t_save">Save</button>`, {
     onMount: m => {
@@ -2152,7 +2186,7 @@ function insights(prof, k) {
   if (downs[0]) out.push({ icon: catIcon(downs[0].c), bg: 'linear-gradient(145deg,#a5f3fc,#06b6d4)', title: `${catName(downs[0].c)} down ${Math.round((1 - downs[0].a / downs[0].b) * 100)}%`, text: `${rs(downs[0].a)} vs ${rs(downs[0].b)} last month. Nice!` });
   live(P(prof).bills).forEach(b => (b.priceLog || []).filter(p => daysBetween(p.date, today()) <= 60 && p.to > p.from).slice(-1).forEach(p => out.push({ icon: '🔺', bg: 'linear-gradient(145deg,#ffb3c4,#f43f5e)', title: `${b.name} went up ${rs(p.to - p.from)}`, text: `${rs(p.from)} → ${rs(p.to)} from ${fmtDate(p.date)}.` })));
   const big = txIn(prof, f, t).filter(x => x.dir === 'dr' && catType(x.cat) === 'exp').sort((a, b) => b.amount - a.amount)[0];
-  if (big && big.amount > 5000) out.push({ icon: '💸', bg: 'linear-gradient(145deg,#ddd6fe,#8b5cf6)', title: 'Biggest expense ' + rs(big.amount), text: `${esc(big.payee || '')} on ${fmtDate(big.date)} · ${catName(big.cat)}.` });
+  if (big && big.amount > 5000) out.push({ icon: '💸', bg: 'linear-gradient(145deg,#ddd6fe,#8b5cf6)', title: 'Biggest expense ' + rs(big.amount), text: `${esc(maskWife(big.payee || ''))} on ${fmtDate(big.date)} · ${catName(big.cat)}.` });
   const bs = budgetStatus(prof, k).filter(x => x.pct >= .8);
   if (bs[0]) out.unshift({ icon: '🎯', bg: bs[0].pct >= 1 ? 'linear-gradient(145deg,#ffb3c4,#f43f5e)' : 'linear-gradient(145deg,#fde68a,#f59e0b)', title: `${catName(bs[0].b.cat)} budget ${bs[0].pct >= 1 ? 'crossed' : 'at ' + Math.round(bs[0].pct * 100) + '%'}`, text: `${rs(bs[0].spent)} of ${rs(bs[0].b.amount)} used in ${ymLabel(k)}.` });
   return out;
@@ -2171,7 +2205,7 @@ function voyageBanner() {
   const left = Object.keys(VOY_CHECKS).filter(k => !(v.checks || {})[k]).length;
   return `<div class="voy"><div class="big">${before ? '🚢' : '🌊'}</div><div style="flex:1;min-width:200px;position:relative;z-index:1"><b>${before ? `Joining ${esc(v.vessel || 'ship')} in ${daysBetween(td, v.signOn)} days` : `At sea · day ${daysBetween(v.signOn, td) + 1}${total ? ' of ' + total : ''}`}</b><div class="sub">${dues.length} payments (${rs(tot)}) fall due during the voyage${manual ? ` · ${manual} need manual payment` : ''}${before && left ? ` · ${left} checklist items left` : ''}</div></div><button class="btn sm" style="position:relative;z-index:1;background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" data-act="go" data-tab="upcoming">Voyage plan →</button></div>`;
 }
-const VOY_CHECKS = { topup: 'Top up accounts that have auto-debits / SIPs during the voyage', prepay: 'Prepay manual bills that fall due while at sea', autodebit: 'Switch regular bills to auto-debit where possible', ankita: 'Share the list of dues with Ankita', sync: 'Press Sync and download a backup', card: 'Turn on international use for your debit / credit card', data: 'Arrange a data plan / eSIM for ports', tax: 'Note sign-on / sign-off dates for your NRI day count' };
+const VOY_CHECKS = { topup: 'Top up accounts that have auto-debits / SIPs during the voyage', prepay: 'Prepay manual bills that fall due while at sea', autodebit: 'Switch regular bills to auto-debit where possible', ankita: 'Share the list of dues with ABB', sync: 'Press Sync and download a backup', card: 'Turn on international use for your debit / credit card', data: 'Arrange a data plan / eSIM for ports', tax: 'Note sign-on / sign-off dates for your NRI day count' };
 
 /* ================= DASHBOARD ================= */
 VIEWS.dashboard = () => {
@@ -2186,7 +2220,7 @@ VIEWS.dashboard = () => {
   const paidThisMonth = live(me.bills).flatMap(b => (b.payments || []).filter(p => ym(p.date) === ym(td)));
   const subsYear = live(me.bills).filter(b => b.kind === 'sub' && b.status === 'active').reduce((s, b) => s + monthlyEq(b) * 12, 0);
   const tx = txIn('me', mf, mt), T = totals(tx);
-  const toWife = tx.filter(t => t.cat === 'wife' && t.dir === 'dr').reduce((s, t) => s + t.amount, 0);
+  const toWife = tx.filter(t => t.cat === 'wife').reduce((s, t) => s + (t.dir === 'dr' ? t.amount : -t.amount), 0);
   const review = live(me.txns).filter(needsReview).length;
   const months = monthsWithData(['me']);
   const last12 = lastMonths(mk, 12), series = last12.map(k => totals(txIn('me', ...monthRange(k))));
@@ -2217,7 +2251,7 @@ VIEWS.dashboard = () => {
     ${kpi('💰 Income', rs(T.inc), 'Wages, interest, payouts', 'grn')}
     ${kpi('🛍️ Spent', rs(T.exp), 'Excludes transfers' + (T.inv ? ' · ' + rsShort(T.inv) + ' invested' : ''), 'red')}
     ${kpi('🐷 Savings rate', T.rate == null ? '—' : Math.round(T.rate * 100) + '%', 'Net ' + rs(T.net), 'acc')}
-    ${kpi('👩 Sent to ' + esc(wifeName()), rs(toWife), '<a href="#" data-act="go" data-tab="wife">See where it went →</a>', 'vio')}
+    ${kpi('👩 ' + esc(wifeName()) + ' (net)', rs(toWife), '<a href="#" data-act="go" data-tab="wife">Sent vs received →</a>', 'vio')}
   </div>
   ${insightCards(insights('me', mk))}
   <div class="grid g21 mt">
@@ -2282,7 +2316,7 @@ VIEWS.plan = () => {
   ${goals.length ? `<div class="grid g4" style="margin-bottom:14px">${kpi('🏆 Saved towards goals', rs(gs), 'of ' + rs(gt), 'gold')}${kpi('📊 Overall progress', gt ? Math.round(gs / gt * 100) + '%' : '—', goals.length + ' goals', 'acc')}</div>
   <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${goals.map(g => { const p = g.target ? Math.min(1, g.saved / g.target) : 0, e = goalEta(g); return `<div class="card hov goal"><div class="flex"><span style="font-size:30px">${esc(g.icon || '🏆')}</span><div style="flex:1;min-width:0"><b style="font-size:15px">${esc(g.name)}</b><div class="small muted">${g.targetDate ? 'Target ' + fmtDate(g.targetDate) : 'No deadline'}${g.monthly ? ' · ' + rs(g.monthly) + '/month' : ''}</div></div>${ring(p, '#fbbf24', 64)}</div>
   <div class="gbar"><i class="hb" style="width:${p * 100}%"></i></div><div class="flex small"><b class="num">${rs(g.saved)}</b><span class="muted">of ${rs(g.target)}</span><span class="sp"></span><span class="pill ${e.cls}">${e.txt}</span></div>
-  <div class="flex mt"><button class="btn sm pri" data-act="goalAdd" data-id="${g.id}">＋ Add money</button><button class="btn sm ghost" data-act="goalEdit" data-id="${g.id}">Edit</button></div></div>`; }).join('')}</div>` : `<div class="card">${emptyBox('🏆', 'No goals yet', 'Emergency fund, car, house down-payment, Ankita’s gift… track progress and see when you’ll reach it.')}</div>`}`;
+  <div class="flex mt"><button class="btn sm pri" data-act="goalAdd" data-id="${g.id}">＋ Add money</button><button class="btn sm ghost" data-act="goalEdit" data-id="${g.id}">Edit</button></div></div>`; }).join('')}</div>` : `<div class="card">${emptyBox('🏆', 'No goals yet', 'Emergency fund, car, house down-payment, ABB’s gift… track progress and see when you’ll reach it.')}</div>`}`;
 };
 function budgetModal(id) {
   const b = id ? P('me').budgets.find(x => x.id === id) : null;
@@ -2415,7 +2449,7 @@ VIEWS.reports = () => {
   let from, to;
   if (per.startsWith('FY')) { const y = +per.slice(3, 7); [from, to] = fyRange(y); } else if (per === '12m') { const e = latestDataMonth(profs); from = monthRange(lastMonths(e, 12)[0])[0]; to = monthRange(e)[1]; } else[from, to] = monthRange(per);
   let tx = profs.flatMap(k => txIn(k, from, to).map(t => ({ ...t, _p: k })));
-  if (who === 'house') tx = tx.filter(t => catType(t.cat) !== 'xfer');
+  if (who === 'house') tx = tx.filter(t => !hhSkip(t));
   const T = totals(tx), drill = who === 'house' ? null : { prof: who, from, to };
   const endK = to > today() ? latestDataMonth(profs) : ym(to);
   const l12 = lastMonths(endK, 12);
@@ -2425,8 +2459,8 @@ VIEWS.reports = () => {
   <select class="inp" style="width:auto" data-act="rPer">${perOpts.map(([k, l]) => `<option value="${k}" ${k === per ? 'selected' : ''}>${l}</option>`).join('')}</select><span class="sp" style="flex:1"></span><button class="btn" data-act="report">🖨 Monthly report</button></div>` : ''}`;
   if (rt === 'tax') return head + taxView();
   if (rt === 'trends') {
-    const ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || catType(t.cat) !== 'xfer')));
-    const prevYr = l12.map(k => { const [y, m] = k.split('-'); return totals(profs.flatMap(p => txIn(p, ...monthRange((+y - 1) + '-' + m))).filter(t => who !== 'house' || catType(t.cat) !== 'xfer')).exp; });
+    const ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || !hhSkip(t))));
+    const prevYr = l12.map(k => { const [y, m] = k.split('-'); return totals(profs.flatMap(p => txIn(p, ...monthRange((+y - 1) + '-' + m))).filter(t => who !== 'house' || !hhSkip(t))).exp; });
     const catT = {}; l12.forEach(k => Object.entries(catTotals(profs, ...monthRange(k))).forEach(([c, v]) => { if (v > 0) catT[c] = (catT[c] || 0) + v; }));
     const top = Object.entries(catT).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
     const stacks = top.map((c, i) => ({ name: catName(c), color: CAT_COLORS[i], cat: c, values: l12.map(k => Math.max(0, catTotals(profs, ...monthRange(k))[c] || 0)) }));
@@ -2460,11 +2494,11 @@ VIEWS.reports = () => {
     <div class="grid g2 mt"><div class="card"><h3>🚕 Transport & travel</h3>${hbars(trans)}</div><div class="card"><h3>💳 By payment mode</h3>${hbars(modes)}</div></div>`;
   }
   // overview
-  const cats = catItems(tx), ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || catType(t.cat) !== 'xfer')));
+  const cats = catItems(tx), ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || !hhSkip(t))));
   const upi = tx.filter(t => t.mode === 'UPI' && t.dir === 'dr' && catType(t.cat) === 'exp');
   const apps = Object.entries(sumBy(upi, t => t.app || 'Unknown')).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: v, color: APP_COLOR[k] || '#64748b' }));
   const appCnt = {}; upi.forEach(t => appCnt[t.app || 'Unknown'] = (appCnt[t.app || 'Unknown'] || 0) + 1);
-  const payees = Object.entries(sumBy(tx.filter(t => t.dir === 'dr' && catType(t.cat) === 'exp'), t => t.payee || '—')).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const payees = Object.entries(sumBy(tx.filter(t => t.dir === 'dr' && catType(t.cat) === 'exp'), t => maskWife(t.payee) || '—')).sort((a, b) => b[1] - a[1]).slice(0, 8);
   return head + `<div class="grid g4">${kpi('💰 Income', rs(T.inc), '', 'grn')}${kpi('🛍️ Spent', rs(T.exp), '', 'red')}${kpi('🐷 Saved', rs(T.net), T.rate == null ? '' : Math.round(T.rate * 100) + '% of income', 'gold')}${kpi('📆 Avg spend / month', rs(T.exp / Math.max(1, new Set(tx.map(t => ym(t.date))).size)), T.inv ? 'Invested ' + rs(T.inv) : '', 'vio')}</div>
   ${who !== 'house' ? insightCards(insights(who, endK)) : ''}
   <div class="grid g2 mt"><div class="card"><h3>🍩 By category <small>tap to see payments</small></h3>${donut(cats, 'Spent', T.exp, drill)}</div><div class="card"><h3>📊 Income, spending & savings <small>12 months</small></h3>${barChart(l12.map(ymLabel), [{ name: 'Income', color: '#34e89e', values: ser.map(s => s.inc) }, { name: 'Spent', color: '#ff7ab6', values: ser.map(s => s.exp) }], { line: { name: 'Saved', color: '#fbbf24', values: ser.map(s => s.net) }, drill: who === 'house' ? null : { prof: who, months: l12 } })}</div></div>
@@ -2486,15 +2520,15 @@ function taxView() {
   <div class="grid g4">${kpi('🟡 NRE interest', rs(sum(nre, 'net'), true), 'Usually tax-free for NRIs', 'gold')}${kpi('🔵 NRO interest (gross)', rs(sum(nro, 'gross'), true), 'Taxable in India', 'acc')}${kpi('🧾 TDS on NRO interest', rs(sum(nro, 'tax'), true), 'Claim it in your ITR', 'vio')}${kpi('🏛️ Tax paid (e-tax)', rs(taxesPaid.reduce((s, t) => s + t.amount, 0)), taxesPaid.length + ' payments', 'red')}</div>
   <div class="grid g2 mt"><div class="card"><h3>🟡 NRE accounts</h3>${tbl(nre)}</div><div class="card"><h3>🔵 NRO / other accounts</h3>${tbl(nro)}</div></div>
   <div class="grid g2 mt"><div class="card"><h3>🚢 Wages received <small>${fy}</small></h3><div class="kpi" style="padding:0"><div class="val num" style="color:var(--grn)">${rs(wages)}</div></div><div class="small muted mt">Salary for work on foreign-going ships, received in your NRE account, is generally not taxed in India when you qualify as an NRI for the year. Keep your sea-day count (Sea Days Ledger) and CDC entries as proof.</div></div>
-  <div class="card"><h3>🧾 Taxes paid</h3>${taxesPaid.length ? taxesPaid.map(t => `<div class="row"><div class="ico">🧾</div><div class="mid"><div class="t1">${esc(t.payee || t.desc)}</div><div class="t2">${fmtDate(t.date)}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') : '<div class="muted small">No tax payments found in this year.</div>'}</div></div>
+  <div class="card"><h3>🧾 Taxes paid</h3>${taxesPaid.length ? taxesPaid.map(t => `<div class="row"><div class="ico">🧾</div><div class="mid"><div class="t1">${esc(maskWife(t.payee || t.desc))}</div><div class="t2">${fmtDate(t.date)}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') : '<div class="muted small">No tax payments found in this year.</div>'}</div></div>
   <div class="alert amb mt">ℹ️ <div>This summary is to help you and your CA prepare your ITR. It isn't tax advice — tax rules and your residential status for the year should be confirmed with a qualified tax professional.</div></div>`;
 }
 function monthlyReport(k, profs) {
   const [f, t] = monthRange(k);
-  let tx = profs.flatMap(p => txIn(p, f, t)); if (profs.length > 1) tx = tx.filter(x => catType(x.cat) !== 'xfer');
-  const T = totals(tx), cats = catItems(tx), pay = Object.entries(sumBy(tx.filter(x => x.dir === 'dr' && catType(x.cat) === 'exp'), x => x.payee || '—')).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  let tx = profs.flatMap(p => txIn(p, f, t)); if (profs.length > 1) tx = tx.filter(x => !hhSkip(x));
+  const T = totals(tx), cats = catItems(tx), pay = Object.entries(sumBy(tx.filter(x => x.dir === 'dr' && catType(x.cat) === 'exp'), x => maskWife(x.payee) || '—')).sort((a, b) => b[1] - a[1]).slice(0, 10);
   const paid = live(P('me').bills).flatMap(b => (b.payments || []).filter(p => ym(p.date) === k).map(p => ({ b, p })));
-  const bs = budgetStatus('me', k), sent = txIn('me', f, t).filter(x => x.cat === 'wife').reduce((s, x) => s + x.amount, 0);
+  const bs = budgetStatus('me', k), sent = txIn('me', f, t).filter(x => x.cat === 'wife').reduce((s, x) => s + (x.dir === 'dr' ? x.amount : -x.amount), 0);
   const ins = insights('me', k);
   return `<div class="rpt"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff1b8,#fbbf24 45%,#d97706);display:grid;place-items:center;font-weight:900;font-size:20px">₹</div><div><h1>BlueWave Finance — ${MONTHS[+k.slice(5) - 1]} ${k.slice(0, 4)}</h1><div style="color:#666">${profs.length > 1 ? 'Household' : esc(S.settings.meName)} · generated ${fmtDate(today())}</div></div></div>
   <div class="k"><div>Income<b>${rs(T.inc)}</b></div><div>Spent<b>${rs(T.exp)}</b></div><div>Saved<b>${rs(T.net)}</b></div><div>Invested<b>${rs(T.inv)}</b></div></div>
@@ -2587,7 +2621,7 @@ function parentsOverview() {
   <div class="grid g2 mt"><div class="card"><h3>📅 Coming up for ${esc(parName())} <small>next 60 days</small></h3><div class="list">${loanDue.map(x => `<div class="row"><div class="ico">🚗</div><div class="mid"><div class="t1">${esc(x.l.name)} EMI <span class="pill vio">Papa's account</span></div><div class="t2">${fmtDate(x.d)} · auto-debit from ${esc(accName('parents', x.l.account))}</div></div><div class="r num b">${rs(x.l.emi)}</div></div>`).join('')}${due.map(x => billRow(x.b, 'me', x.d)).join('') || (loanDue.length ? '' : emptyBox('🧾', 'No bills for ' + esc(parName()) + ' yet', 'Add their gas, electricity, phone and DTH.', `<button class="btn sm pri" data-act="parentsBill">＋ Add a bill</button>`))}</div></div>
   <div class="card"><h3>🧾 Their bills & recharges</h3><div class="list">${pBills.map(b => `<div class="row" style="cursor:pointer" data-act="editBill" data-id="${b.id}"><div class="ico">${catIcon(b.cat)}</div><div class="mid"><div class="t1">${esc(b.name)}</div><div class="t2">${CYCLES[b.cycle]} · next ${fmtDate(b.nextDue)}${b.consumerNo ? ' · ' + esc(b.consumerNo) : ''}</div></div><div class="r num b">${rs(b.amount)}</div></div>`).join('') || '<div class="muted small">None yet.</div>'}</div></div></div>
   <div class="card mt"><h3>📜 Payments for ${esc(parName())} <small>${esc(lab)}</small><span class="sp"></span>${tx.length ? `<button class="btn sm ghost" data-act="drill" data-prof="me" data-for="parents" data-from="${from}" data-to="${to}">Open in Money →</button>` : ''}</h3>
-  ${tx.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Paid to</th><th>Category</th><th>From account</th><th class="ra">Amount</th></tr></thead><tbody>${tx.slice(0, 60).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td class="num">${fmtDate(t.date)}</td><td><b>${esc(t.payee || t.desc)}</b><div class="muted small">${esc(t.note || t.remark || '')}</div></td><td>${catPill(t.cat)}</td><td class="small">${esc(accName('me', t.account))}</td><td class="ra num b">${rs(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No payments tagged for ' + esc(parName()) + ' in this period yet.</div>'}</div>`;
+  ${tx.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Paid to</th><th>Category</th><th>From account</th><th class="ra">Amount</th></tr></thead><tbody>${tx.slice(0, 60).map(t => `<tr class="clk" data-act="editTxn" data-id="${t.id}" data-prof="me"><td class="num">${fmtDate(t.date)}</td><td><b>${esc(maskWife(t.payee || t.desc))}</b><div class="muted small">${esc(t.note || t.remark || '')}</div></td><td>${catPill(t.cat)}</td><td class="small">${esc(accName('me', t.account))}</td><td class="ra num b">${rs(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No payments tagged for ' + esc(parName()) + ' in this period yet.</div>'}</div>`;
 }
 function parentsSetupModal() {
   modal('👪 ' + esc(parName()) + ' — names in bank', `<div class="frow"><div class="fld"><label>Show this section as</label><input class="inp" id="ps_n" value="${esc(parName())}" placeholder="Parents / Mummy-Papa"></div></div>
@@ -2665,7 +2699,7 @@ function loanView() {
     <div class="grid g4" style="gap:10px">${kpi('💳 EMI', rs(l.emi), 'on day ' + (l.firstEmi ? +l.firstEmi.slice(8) : '—') + ' each month', 'vio')}${kpi('📆 EMIs left', c.left ?? '—', c.end ? 'last EMI ' + fmtDate(c.end) : 'add tenure', 'gold')}${kpi('⏭️ Next EMI', c.next ? fmtDateShort(c.next) : 'Done', c.next ? 'in ' + daysBetween(today(), c.next) + ' days' : '', 'acc')}${kpi('💰 Outstanding', c.outstanding != null ? rs(c.outstanding) : '—', l.principal && l.rate ? 'estimated principal' : 'remaining EMIs total', 'red')}</div>
     <div class="mt"><div class="flex small"><b>${c.sched} of ${l.tenure || '?'} EMIs paid</b><span class="sp"></span><span class="muted">${Math.round(c.pct * 100)}%</span></div><div class="goal"><div class="gbar"><i class="hb" style="width:${c.pct * 100}%"></i></div></div></div>
     ${l.notes ? `<div class="small muted">${esc(l.notes)}</div>` : ''}</div>
-    <div class="card"><h3>🧾 EMIs seen in statement <small>${c.found.length}</small></h3><div class="list">${c.found.slice(0, 8).map(t => `<div class="row"><div class="ico">✅</div><div class="mid"><div class="t1">${fmtDate(t.date)}</div><div class="t2">${esc(t.desc)}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') || `<div class="muted small">None yet. Import Papa's PNB statement${l.match ? '' : ' and set the “word in statement” for this loan'}.</div>`}</div></div></div>`; }).join('<div style="height:16px"></div>')
+    <div class="card"><h3>🧾 EMIs seen in statement <small>${c.found.length}</small></h3><div class="list">${c.found.slice(0, 8).map(t => `<div class="row"><div class="ico">✅</div><div class="mid"><div class="t1">${fmtDate(t.date)}</div><div class="t2">${esc(maskWife(t.desc))}</div></div><div class="r num b">${rs(t.amount)}</div></div>`).join('') || `<div class="muted small">None yet. Import Papa's PNB statement${l.match ? '' : ' and set the “word in statement” for this loan'}.</div>`}</div></div></div>`; }).join('<div style="height:16px"></div>')
     : `<div class="card">${emptyBox('🚗', 'Add the car loan', 'Enter the EMI amount, first EMI date and tenure. With the loan amount and interest rate, the outstanding balance is worked out too.', `<button class="btn pri sm" data-act="loanEdit">＋ Add car loan</button>`)}</div>`}`;
 }
 VIEWS.parents = () => {
@@ -2746,7 +2780,7 @@ const ROLE_ICON = { self: '🧑', wife: '👩', dad: '👨', mom: '👩‍🦳',
 function ensureMembers() {
   const t = nowIso(); let ch = false;
   if (!live(P('me').members || []).length) { P('me').members = [{ id: uid(), role: 'self', name: S.settings.meName || 'Ritesh', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
-  if (!live(P('wife').members || []).length) { P('wife').members = [{ id: uid(), role: 'wife', name: S.settings.wifeName || 'Ankita', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
+  if (!live(P('wife').members || []).length) { P('wife').members = [{ id: uid(), role: 'wife', name: S.settings.wifeName || 'ABB', phones: [], emails: [], notes: '', updatedAt: t }]; ch = true; }
   if (ch) save();
 }
 const findMember = (prof, id) => (P(prof).members || []).find(x => x.id === id);
@@ -2916,7 +2950,7 @@ function findSavedDuplicates(prof) {
 function dupCheckModal(prof = 'me') {
   const pairs = findSavedDuplicates(prof);
   const who = { me: S.settings.meName, wife: wifeName(), parents: "Papa's account" }[prof];
-  const line = t => `<div class="small"><b>${fmtDate(t.date)}</b> · ${esc(accName(prof, t.account))} · ${t.source === 'import' ? '🏦 statement' : t.source === 'bill' ? '🧾 bill paid' : '✍️ added by you'}</div><div class="small muted" style="white-space:normal">${esc(t.desc)}</div>`;
+  const line = t => `<div class="small"><b>${fmtDate(t.date)}</b> · ${esc(accName(prof, t.account))} · ${t.source === 'import' ? '🏦 statement' : t.source === 'bill' ? '🧾 bill paid' : '✍️ added by you'}</div><div class="small muted" style="white-space:normal">${esc(maskWife(t.desc))}</div>`;
   const body = pairs.length ? `<p class="muted" style="margin-top:0">Found <b>${pairs.length}</b> pair${pairs.length === 1 ? '' : 's'} that look like the same payment saved twice. For each, keep one or mark them as two different payments.</p>
   ${pairs.map((p, i) => { const keep = p.a.source === 'import' && p.b.source !== 'import' ? p.a : p.b.source === 'import' && p.a.source !== 'import' ? p.b : (p.a.reviewed ? p.a : p.b); const drop = keep === p.a ? p.b : p.a;
     return `<div class="card" style="margin-bottom:12px;padding:14px" data-pair="${i}"><div class="flex" style="margin-bottom:8px"><span class="pill ${p.s.lvl === 'sure' ? 'red' : 'amb'}">${p.s.lvl === 'sure' ? 'Duplicate' : 'Possible duplicate'}</span><b class="num">${p.a.dir === 'dr' ? '−' : '+'}${rs(p.a.amount, true)}</b><span class="small muted">${esc(p.s.why)}</span></div>
@@ -3077,8 +3111,8 @@ const ACT = {
   more: el => { VIEW.sub['lim_' + el.dataset.prof] = (VIEW.sub['lim_' + el.dataset.prof] || 150) + 300; rerender(); },
   exportCsv: el => {
     const k = el.dataset.prof, rows = [['Date', 'Account', 'Payee', 'Narration', 'Ref', 'Mode', 'UPI app', 'Category', 'Debit', 'Credit', 'Balance', 'Note']];
-    live(P(k).txns).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => rows.push([t.date, accName(k, t.account), t.payee, t.desc, t.ref, t.mode, t.app || '', catName(t.cat), t.dir === 'dr' ? t.amount : '', t.dir === 'cr' ? t.amount : '', t.balance ?? '', t.note || '']));
-    confirmBox('Export as CSV?', 'The CSV file is <b>not encrypted</b> — anyone who opens it can read it. Keep it somewhere safe.', 'Download CSV', () => download(({ me: 'ritesh', wife: 'ankita', parents: 'papa' }[k] || k) + '-transactions.csv', rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv'));
+    live(P(k).txns).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => rows.push([t.date, accName(k, t.account), maskWife(t.payee), maskWife(t.desc), t.ref, t.mode, t.app || '', catName(t.cat), t.dir === 'dr' ? t.amount : '', t.dir === 'cr' ? t.amount : '', t.balance ?? '', t.note || '']));
+    confirmBox('Export as CSV?', 'The CSV file is <b>not encrypted</b> — anyone who opens it can read it. Keep it somewhere safe.', 'Download CSV', () => download(({ me: 'ritesh', wife: 'abb', parents: 'papa' }[k] || k) + '-transactions.csv', rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'), 'text/csv'));
   },
   editTxn: el => txnModal(el.dataset.prof || 'me', el.dataset.id),
   reviewSave: el => {
