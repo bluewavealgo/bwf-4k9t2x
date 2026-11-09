@@ -581,7 +581,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '2.3';
+const APP_VER = '2.5';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -931,9 +931,11 @@ function recurringSuggestions(profKey) {
     const cycle = g >= 25 && g <= 35 ? 'monthly' : g >= 84 && g <= 96 ? 'quarterly' : g >= 175 && g <= 190 ? 'halfyearly' : g >= 350 && g <= 380 ? 'yearly' : null;
     if (!cycle) return;
     const last = arr[arr.length - 1], pc = compact(last.payee);
+    const latest = live(prof.txns).filter(t => t.account === last.account).reduce((m, t) => t.date > m ? t.date : m, last.date);
+    if (daysBetween(last.date, latest) > g * 2 + 10) return; // stopped — not seen in the latest statements
     if (billMatches.some(m => m && (pc.includes(m) || m.includes(pc)))) return;
     let next = addCycle(last.date, cycle); while (next < today()) next = addCycle(next, cycle);
-    out.push({ key: k, name: last.payee, amount: last.amount, cycle, cat: last.cat, count: arr.length, last: last.date, next, account: last.account, autopay: last.mode === 'NACH' || /RECURRING|MANDATE/i.test(last.desc), match: last.payee, kind: ['subs', 'tools', 'entertainment'].includes(last.cat) ? 'sub' : 'bill' });
+    out.push({ key: k, name: last.payee, amount: last.amount, cycle, cat: last.cat, count: arr.length, last: last.date, next, account: last.account, autopay: last.mode === 'NACH' || /RECURRING|MANDATE/i.test(last.desc), match: last.payee, kind: ['subs', 'tools', 'entertainment'].includes(last.cat) ? 'sub' : ['invest', 'insurance', 'emi', 'trading'].includes(last.cat) ? 'fixed' : 'bill' });
   });
   return out.sort((a, b) => a.next.localeCompare(b.next));
 }
@@ -1034,13 +1036,13 @@ function download(name, text, type = 'text/plain') {
 /* ============ BlueWave Finance — UI ============ */
 const NAV = [
   ['sec', 'Overview'], ['dashboard', 'Dashboard', '🏠'], ['upcoming', 'Upcoming', '📅'],
-  ['sec', 'Payments'], ['bills', 'Bills', '🧾'], ['subs', 'Subscriptions', '🔁'], ['money', 'Money', '💰'],
+  ['sec', 'Payments'], ['bills', 'Bills', '🧾'], ['fixed', 'Fixed payments', '🔒'], ['subs', 'Subscriptions', '🔁'], ['money', 'Money', '💰'],
   ['sec', 'Planning'], ['plan', 'Budgets & Goals', '🎯'], ['worth', 'Net worth', '💎'],
   ['sec', 'People'], ['friends', 'Friends', '🤝'], ['wife', 'Ankita', '👩'], ['parents', 'Parents', '👪'], ['contacts', 'Numbers & Emails', '📇'],
   ['sec', 'Records'], ['calendar', 'Calendar', '🗓️'], ['history', 'History', '📜'], ['reports', 'Reports', '📊'],
   ['sec', ''], ['settings', 'Settings', '⚙️'],
 ];
-const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents', contacts: 'Numbers & Emails' };
+const TITLES = { dashboard: 'Dashboard', upcoming: 'Upcoming', bills: 'Bills', subs: 'Subscriptions', money: 'Money — Expenses & Earnings', friends: 'Friends', wife: 'Ankita', calendar: 'Calendar', history: 'Payment history', reports: 'Reports', settings: 'Settings', plan: 'Budgets & Goals', worth: 'Net worth', parents: 'Parents', contacts: 'Numbers & Emails', fixed: 'Fixed payments' };
 
 function toast(msg, ms = 2600) { $$('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
 function wifeName() { return S.settings.wifeName || 'Ankita'; }
@@ -1270,7 +1272,7 @@ VIEWS.upcoming = () => {
 
 function billsView(kind) {
   const me = P('me'), td = today();
-  const all = live(me.bills).filter(b => (b.kind || 'bill') === kind);
+  const all = live(me.bills).filter(b => kind === 'bill' ? (b.kind || 'bill') === 'bill' && !isFixed(b) : (b.kind || 'bill') === kind);
   const flt = VIEW.sub['bf_' + kind] || 'active';
   const shown = all.filter(b => flt === 'all' || (flt === 'active' ? b.status === 'active' : b.status !== 'active')).sort((a, b) => (a.nextDue || '9').localeCompare(b.nextDue || '9'));
   const sugg = recurringSuggestions('me').filter(s => s.kind === kind);
@@ -1339,7 +1341,7 @@ function txnsPanel(profKey) {
     ${F.from ? `<span class="pill gold">📅 ${F.from === F.to ? fmtDate(F.from) : fmtDateShort(F.from) + ' – ' + fmtDate(F.to)}</span>` : ''}
     ${Object.values(F).some(Boolean) ? `<button class="btn sm ghost" data-act="fltClear" data-prof="${profKey}">Clear</button>` : ''}
   </div>
-  <div class="flex small" style="margin-bottom:10px"><span class="pill">${arr.length} entries</span><span class="pill red">Spent ${rs(T.exp)}</span><span class="pill grn">Income ${rs(T.inc)}</span><span class="pill">Transfers ${rs(arr.filter(t => catType(t.cat) === 'xfer').reduce((s, t) => s + t.amount, 0))}</span><span class="sp"></span><button class="btn sm" data-act="exportCsv" data-prof="${profKey}">⬇ CSV</button></div>
+  <div class="flex small" style="margin-bottom:10px"><span class="pill">${arr.length} entries</span><span class="pill red">Spent ${rs(T.exp)}</span><span class="pill grn">Income ${rs(T.inc)}</span><span class="pill">Transfers ${rs(arr.filter(t => catType(t.cat) === 'xfer').reduce((s, t) => s + t.amount, 0))}</span><span class="sp"></span><button class="btn sm" data-act="dupCheck" data-prof="${profKey}">🔍 Find duplicates</button><button class="btn sm" data-act="exportCsv" data-prof="${profKey}">⬇ CSV</button></div>
   ${arr.length ? `<div class="tblw"><table class="t"><thead><tr><th>Date</th><th>Payee / details</th><th>Account</th><th>Category</th><th>UPI app / mode</th><th class="ra">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>${arr.length > lim ? `<div class="mt" style="text-align:center"><button class="btn" data-act="more" data-prof="${profKey}">Show more (${arr.length - lim} left)</button></div>` : ''}`
     : `<div class="card">${emptyBox('💰', 'No entries yet', 'Import a bank statement or add an entry by hand.', `<button class="btn pri sm" data-act="subTab" data-base="${profKey === 'me' ? 'money' : profKey}" data-sub="import">⬆ Import statement</button>`)}</div>`}`;
 }
@@ -1443,23 +1445,27 @@ function importPreview() {
   let acc = last4 && prof.accounts.find(a => !a.deleted && a.last4 === last4);
   if (!acc && I.meta.bank) { const cand = prof.accounts.filter(a => !a.deleted && a.bank === I.meta.bank && (!I.meta.accType || a.type === I.meta.accType) && !a.last4); if (cand.length === 1) acc = cand[0]; }
   I.accId = I.accId || (acc ? acc.id : '');
-  const existing = new Set(live(prof.txns).map(dedupeKey));
-  I.rows = I.txns.map((t, i) => { const x = { ...t, account: I.accId, seq: i }; const c = classify(x, I.profKey); Object.assign(x, c); x.dup = existing.has(dedupeKey(x)); x.sel = !x.dup; return x; });
-  const n = I.rows.length, dups = I.rows.filter(r => r.dup).length;
+  const prevAct = {}; (I.rows || []).forEach(r => { if (r.userAct) prevAct[r.seq] = r.action; });
+  I.rows = I.txns.map((t, i) => { const x = { ...t, account: I.accId, seq: i }; const c = classify(x, I.profKey); Object.assign(x, c); return x; });
+  if (I.accId) markDuplicates(I.profKey, I.rows); else I.rows.forEach(r => { r.action = 'add'; r.sel = true; });
+  I.rows.forEach(r => { if (prevAct[r.seq]) { r.action = prevAct[r.seq]; r.userAct = true; r.sel = r.action !== 'skip'; } });
+  const n = I.rows.length, dups = I.rows.filter(r => r.dup === 'sure').length, maybes = I.rows.filter(r => r.dup === 'maybe').length;
   const dates = I.rows.map(r => r.date).sort();
   const balOk = !I.warnings.some(w => /balance/.test(w));
-  const body = `<div class="grid g4" style="margin-bottom:12px">${kpi('Bank', esc(I.meta.bank || '—') + (I.meta.accType ? ' · ' + I.meta.accType : ''), I.meta.accountNo ? 'A/c ··' + esc(last4) : 'Account no. not found')}${kpi('Period', fmtDateShort(dates[0]) + ' → ' + fmtDateShort(dates[dates.length - 1]), dates[0].slice(0, 4) === dates[dates.length - 1].slice(0, 4) ? dates[0].slice(0, 4) : '')}${kpi('Entries', n, dups ? dups + ' already imported (skipped)' : 'all new')}${kpi('Balance check', balOk ? '✓ Matches' : '⚠ Check', balOk ? 'Every row adds up to the printed balance' : I.warnings.length + ' warnings', balOk ? 'grn' : 'amb')}</div>
+  const body = `<div class="grid g4" style="margin-bottom:12px">${kpi('Bank', esc(I.meta.bank || '—') + (I.meta.accType ? ' · ' + I.meta.accType : ''), I.meta.accountNo ? 'A/c ··' + esc(last4) : 'Account no. not found')}${kpi('Period', fmtDateShort(dates[0]) + ' → ' + fmtDateShort(dates[dates.length - 1]), dates[0].slice(0, 4) === dates[dates.length - 1].slice(0, 4) ? dates[0].slice(0, 4) : '')}${kpi('Entries', n, dups || maybes ? `${dups ? dups + ' already saved' : ''}${dups && maybes ? ' · ' : ''}${maybes ? maybes + ' to check' : ''}` : 'all new', maybes ? 'amb' : '')}${kpi('Balance check', balOk ? '✓ Matches' : '⚠ Check', balOk ? 'Every row adds up to the printed balance' : I.warnings.length + ' warnings', balOk ? 'grn' : 'amb')}</div>
+  ${dups || maybes ? `<div class="alert ${maybes ? 'amb' : 'acc'}">🔍 <div><b>Duplicate check:</b> ${dups ? `${dups} entr${dups === 1 ? 'y is' : 'ies are'} already saved and will be skipped. ` : ''}${maybes ? `${maybes} look${maybes === 1 ? 's' : ''} like possible duplicates — check the yellow rows (shown first) and choose what to do.` : ''}</div></div>` : ''}
   ${!I.accId ? '<div class="alert amb">🏦 <div>Which account is this? Pick it below — the app remembers it for next time.</div></div>' : ''}
   <div class="frow"><div class="fld"><label>Import into account</label><select class="inp" id="ip_acc">${accOptions(I.profKey, I.accId)}<option value="__new">＋ New account…</option></select></div>
   ${last4 ? `<div class="fld"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="ip_link" checked> Remember: account ending ${esc(last4)} = this account</label></div>` : ''}</div>
   <div class="tblw" style="max-height:52vh"><table class="t"><thead><tr><th><input type="checkbox" id="ip_all" checked></th><th>Date</th><th>Narration</th><th class="ra">Amount</th><th>Category</th><th>UPI app</th><th></th></tr></thead><tbody>
-  ${I.rows.map((r, i) => `<tr style="${r.dup ? 'opacity:.45' : ''}"><td><input type="checkbox" data-ip="${i}" ${r.sel ? 'checked' : ''}></td><td class="num" style="white-space:nowrap">${fmtDateShort(r.date)}</td><td class="desc" title="${esc(r.desc)}">${esc(r.desc)}</td><td class="ra">${amtCell(r)}</td><td><select class="inp" style="padding:4px 6px;min-width:150px" data-ipc="${i}">${catOptions(r.cat, r.dir === 'dr' ? ['exp', 'inv', 'xfer'] : ['inc', 'inv', 'xfer'])}</select></td><td>${r.mode === 'UPI' && r.dir === 'dr' ? `<span class="conf ${r.appConf || 'l'}"></span> ${esc(r.app || '?')}` : `<span class="muted small">${esc(r.mode)}</span>`}</td><td>${r.dup ? '<span class="pill">Duplicate</span>' : `<span class="conf ${r.conf}" title="Category confidence"></span>`}</td></tr>`).join('')}
+  ${I.rows.map((r, i) => [r, i]).sort((x, y) => (x[0].dup === 'maybe' ? 0 : 1) - (y[0].dup === 'maybe' ? 0 : 1) || x[1] - y[1]).map(([r, i]) => `<tr style="${r.dup && r.action === 'skip' ? 'opacity:.5' : ''}${r.dup === 'maybe' ? ';background:var(--ambbg)' : ''}"><td><input type="checkbox" data-ip="${i}" ${r.sel ? 'checked' : ''}></td><td class="num" style="white-space:nowrap">${fmtDateShort(r.date)}</td><td class="desc" title="${esc(r.desc)}">${esc(r.desc)}</td><td class="ra">${amtCell(r)}</td><td><select class="inp" style="padding:4px 6px;min-width:150px" data-ipc="${i}">${catOptions(r.cat, r.dir === 'dr' ? ['exp', 'inv', 'xfer'] : ['inc', 'inv', 'xfer'])}</select></td><td>${r.mode === 'UPI' && r.dir === 'dr' ? `<span class="conf ${r.appConf || 'l'}"></span> ${esc(r.app || '?')}` : `<span class="muted small">${esc(r.mode)}</span>`}</td><td>${dupRowCell(r, i)}</td></tr>`).join('')}
   </tbody></table></div><div class="small muted mt"><span class="conf h"></span> sure &nbsp; <span class="conf m"></span> likely &nbsp; <span class="conf l"></span> needs your check (goes to Review)</div>`;
-  modal('Import preview — ' + esc(I.file), body, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ip_go">Import ${n - dups} entries</button>`, {
+  modal('Import preview — ' + esc(I.file), body, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ip_go">Import ${I.rows.filter(r => r.sel).length} entries</button>`, {
     wide: true, sticky: true, onMount: m => {
-      $('#ip_acc', m).onchange = e => { if (e.target.value === '__new') { const nm = prompt('Name for the new account (e.g. SBI NRE):'); if (!nm) { e.target.value = I.accId; return; } const a = touch({ id: uid(), bank: I.meta.bank || '', type: I.meta.accType || 'Savings', name: nm, last4, status: 'active' }); prof.accounts.push(a); I.accId = a.id; save(); importPreview(); } else I.accId = e.target.value; };
+      $('#ip_acc', m).onchange = e => { if (e.target.value === '__new') { const nm = prompt('Name for the new account (e.g. SBI NRE):'); if (!nm) { e.target.value = I.accId; return; } const a = touch({ id: uid(), bank: I.meta.bank || '', type: I.meta.accType || 'Savings', name: nm, last4, status: 'active' }); prof.accounts.push(a); I.accId = a.id; save(); importPreview(); } else { I.accId = e.target.value; importPreview(); } };
       $('#ip_all', m).onchange = e => { $$('[data-ip]', m).forEach(c => { c.checked = e.target.checked; I.rows[+c.dataset.ip].sel = e.target.checked; }); upd(); };
-      $$('[data-ip]', m).forEach(c => c.onchange = () => { I.rows[+c.dataset.ip].sel = c.checked; upd(); });
+      $$('[data-ip]', m).forEach(c => c.onchange = () => { const r = I.rows[+c.dataset.ip]; r.sel = c.checked; if (r.dup) { r.action = c.checked ? (r.action === 'skip' ? 'keep' : r.action) : 'skip'; r.userAct = true; const s = $(`[data-ipa="${c.dataset.ip}"]`, m); if (s) s.value = r.action; } upd(); });
+      $$('[data-ipa]', m).forEach(s => s.onchange = () => { const r = I.rows[+s.dataset.ipa]; r.action = s.value; r.userAct = true; r.sel = s.value !== 'skip'; const c = $(`[data-ip="${s.dataset.ipa}"]`, m); if (c) c.checked = r.sel; s.closest('tr').style.opacity = r.sel ? '' : '.5'; upd(); });
       $$('[data-ipc]', m).forEach(s => s.onchange = () => { const r = I.rows[+s.dataset.ipc]; r.cat = s.value; r.conf = 'h'; r.userSet = true; });
       const upd = () => { $('#ip_go', m).textContent = 'Import ' + I.rows.filter(r => r.sel).length + ' entries'; };
       $('#ip_go', m).onclick = () => doImport($('#ip_link', m)?.checked);
@@ -1472,12 +1478,12 @@ function doImport(link) {
   const acc = prof.accounts.find(a => a.id === I.accId);
   const last4 = (I.meta.accountNo || '').replace(/\D/g, '').slice(-4);
   if (link && last4 && acc) { acc.last4 = last4; if (I.meta.accType && !acc.type) acc.type = I.meta.accType; touch(acc); }
-  const existing = new Set(live(prof.txns).map(dedupeKey));
-  const batch = uid(), added = [];
+  const batch = uid(), added = []; let merged = 0, skipped = I.rows.filter(r => !r.sel).length;
   I.rows.filter(r => r.sel).forEach(r => {
     const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
     if (t.remark && /HOME\s*EXPE|HOME\s*RENT/i.test(t.remark)) t.note = /RENT/i.test(t.remark) ? 'Home rent' : 'Home expense';
-    const k = dedupeKey(t); if (existing.has(k)) return; existing.add(k);
+    if (r.dup && r.action === 'replace' && r.matchId) { mergeInto(I.profKey, t, r.matchId); merged++; }
+    if (r.dup && r.action === 'keep' && r.matchId) { const o = prof.txns.find(x => x.id === r.matchId); if (o) { o.notDup = [...(o.notDup || []), t.id]; touch(o); } t.notDup = [r.matchId]; }
     prof.txns.push(t); added.push(t);
   });
   // friend entries for auto-matched friends
@@ -1485,7 +1491,7 @@ function doImport(link) {
   const linked = linkBills(I.profKey, added);
   save(); closeModal();
   const rv = added.filter(needsReview).length;
-  toast(`Imported ${added.length} entries${linked ? ' · ' + linked + ' bill payments matched' : ''}${rv ? ' · ' + rv + ' to review' : ''}`, 4000);
+  toast(`Imported ${added.length} entries${skipped ? ' · ' + skipped + ' duplicates skipped' : ''}${merged ? ' · ' + merged + ' merged with your entries' : ''}${linked ? ' · ' + linked + ' bill payments matched' : ''}${rv ? ' · ' + rv + ' to review' : ''}`, 4000);
   IMPORT = null;
   VIEW.sub[I.profKey === 'me' ? 'money' : I.profKey] = rv ? 'review' : 'txns';
   render();
@@ -2517,7 +2523,7 @@ const FACT = {
     VIEW.sub['f_' + prof] = { q: '', m: '', acc: '', cat: el.dataset.cat || '', app: '', ty: el.dataset.cat || el.dataset.for ? '' : 'exp', from: el.dataset.from, to: el.dataset.to, forWho: el.dataset.for || '' };
     VIEW.tab = base; VIEW.sub[base] = 'txns'; render(); window.scrollTo(0, 0);
   },
-  quickAdd: () => modal('Add', `<div class="grid g3" style="gap:12px">${[['🧾', 'Bill', 'editBill', 'bill'], ['🔁', 'Subscription', 'editBill', 'sub'], ['💸', 'Expense / income', 'qaEntry', ''], ['⬆️', 'Import statement', 'qaImport', ''], ['🎯', 'Budget', 'budgetEdit', ''], ['🏆', 'Savings goal', 'goalEdit', ''], ['💼', 'Asset / loan', 'assetEdit', ''], ['🤝', 'Friend lend / borrow', 'qaFriend', ''], ['🚢', 'Voyage', 'voyageEdit', '']].map(([i, l, a, k]) => `<button class="card hov" style="text-align:left;cursor:pointer;padding:14px" data-act="${a}" data-kind="${k}"><div style="font-size:24px">${i}</div><div class="b mt" style="margin-top:8px">${esc(l)}</div></button>`).join('')}</div>`),
+  quickAdd: () => modal('Add', `<div class="grid g3" style="gap:12px">${[['🧾', 'Bill', 'editBill', 'bill'], ['🔒', 'EMI / insurance / SIP', 'fixedAdd', ''], ['🔁', 'Subscription', 'editBill', 'sub'], ['💸', 'Expense / income', 'qaEntry', ''], ['⬆️', 'Import statement', 'qaImport', ''], ['🎯', 'Budget', 'budgetEdit', ''], ['🏆', 'Savings goal', 'goalEdit', ''], ['💼', 'Asset / loan', 'assetEdit', ''], ['🤝', 'Friend lend / borrow', 'qaFriend', ''], ['🚢', 'Voyage', 'voyageEdit', '']].map(([i, l, a, k]) => `<button class="card hov" style="text-align:left;cursor:pointer;padding:14px" data-act="${a}" data-kind="${k}"><div style="font-size:24px">${i}</div><div class="b mt" style="margin-top:8px">${esc(l)}</div></button>`).join('')}</div>`),
   budgetEdit: el => budgetModal(el.dataset.id),
   budgetSuggest: () => suggestBudgets(),
   goalEdit: el => goalModal(el.dataset.id),
@@ -2840,6 +2846,203 @@ Object.assign(PACT, {
   emailEdit: el => emailModal(el.dataset.m, el.dataset.id, el.dataset.prof || 'parents'),
 });
 Object.assign(PCHANGE, { cq: el => { VIEW.sub.cq = el.value; rerender(); const i = $('[data-act=cq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } });
+
+/* ============ BlueWave Finance — smart duplicate check ============ */
+const utrOf = t => { const s = (t.desc || '') + ' ' + (t.ref || ''); const m = s.match(/(?<!\d)(\d{12})(?!\d)/); return m ? m[1] : (/^\d{10,}$/.test(t.ref || '') ? t.ref : ''); };
+const sameMoney = (a, b) => a.dir === b.dir && Math.abs(a.amount - b.amount) < 0.01;
+const nearDays = (a, b, n) => Math.abs(daysBetween(a.date, b.date)) <= n;
+const simDesc = (a, b) => { const x = payeeKey(a.payee || payeeOf(a.desc || '')), y = payeeKey(b.payee || payeeOf(b.desc || '')); return x && y && (x === y || x.includes(y) || y.includes(x)) || compact(a.desc).slice(0, 30) === compact(b.desc).slice(0, 30); };
+/* how sure are we that statement row r and saved entry e are the same transaction */
+function dupScore(r, e) {
+  if (!sameMoney(r, e) || r.account !== e.account) return null;
+  const ur = utrOf(r), ue = utrOf(e);
+  if (ur && ue) return ur === ue && nearDays(r, e, 5) ? { lvl: 'sure', why: 'Same UPI/reference no. ' + ur } : null;
+  if (r.date === e.date && r.balance != null && e.balance != null && Math.abs(r.balance - e.balance) < 0.01) return { lvl: 'sure', why: 'Same date, amount and balance after' };
+  if (r.date === e.date && dedupeKey(r) === dedupeKey(e)) return { lvl: 'sure', why: 'Same date, amount and narration' };
+  if (e.source === 'manual' || e.source === 'bill') return nearDays(r, e, 4) ? { lvl: 'maybe', why: 'You added this by hand on ' + fmtDate(e.date) + (e.source === 'bill' ? ' (bill marked paid)' : ''), manual: true } : null;
+  if (nearDays(r, e, 2) && simDesc(r, e)) return { lvl: 'maybe', why: 'Same amount and payee ' + (r.date === e.date ? 'on the same day' : 'within 2 days') + (e.batch ? ' — from an earlier statement' : '') };
+  return null;
+}
+/* one-to-one matching, so two real ₹20 payments on the same day are never merged into one */
+function markDuplicates(prof, rows) {
+  const pool = live(P(prof).txns).filter(e => e.account === rows[0]?.account);
+  const used = new Set();
+  rows.forEach(r => { r.dup = null; r.matchId = null; r.why = ''; });
+  ['sure', 'maybe'].forEach(level => rows.forEach(r => {
+    if (r.dup) return;
+    let best = null;
+    for (const e of pool) { if (used.has(e.id)) continue; const s = dupScore(r, e); if (s && s.lvl === level && (!best || Math.abs(daysBetween(r.date, e.date)) < Math.abs(daysBetween(r.date, best.e.date)))) best = { e, s }; }
+    if (best) { used.add(best.e.id); r.dup = level; r.matchId = best.e.id; r.why = best.s.why; r.action = best.s.manual ? 'replace' : 'skip'; }
+  }));
+  rows.forEach(r => { if (!r.dup) r.action = 'add'; r.sel = r.action !== 'skip'; });
+}
+/* move what the user already set on the hand-made entry onto the bank entry, then remove it */
+function mergeInto(prof, t, oldId) {
+  const o = P(prof).txns.find(x => x.id === oldId); if (!o || o.deleted) return;
+  ['note', 'app', 'appConf', 'friendId', 'billId', 'for', 'loanId'].forEach(k => { if (o[k] && !t[k]) t[k] = o[k]; });
+  if (o.reviewed || o.source === 'manual' || o.source === 'bill') { t.cat = o.cat; t.conf = 'h'; t.reviewed = true; if (o.app && t.mode === 'UPI') { t.app = o.app; t.appConf = 'h'; } if (o.note) t.note = o.note; }
+  live(P(prof).bills).forEach(b => (b.payments || []).forEach(p => { if (p.txnId === oldId) { p.txnId = t.id; touch(b); } }));
+  live(P(prof).friends).forEach(f => (f.entries || []).forEach(en => { if (en.txnId === oldId) { en.txnId = t.id; touch(f); } }));
+  removeRec(P(prof).txns, oldId);
+}
+function dupRowCell(r, i) {
+  if (!r.dup) return `<span class="conf ${r.conf}" title="Category confidence"></span>`;
+  const e = P(IMPORT.profKey).txns.find(x => x.id === r.matchId);
+  const opts = [['skip', 'Skip — already saved'], ['keep', 'Keep both (not a duplicate)']].concat(e && (e.source === 'manual' || e.source === 'bill') ? [['replace', 'Use bank entry, remove mine']] : []);
+  return `<div style="min-width:190px"><span class="pill ${r.dup === 'sure' ? '' : 'amb'}">${r.dup === 'sure' ? 'Duplicate' : 'Possible duplicate'}</span><div class="small muted" style="margin:3px 0;white-space:normal">${esc(r.why)}${e ? ' · saved: ' + esc((e.payee || e.desc || '').slice(0, 28)) : ''}</div><select class="inp" style="padding:3px 6px" data-ipa="${i}">${opts.map(([k, l]) => `<option value="${k}" ${r.action === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
+}
+
+/* ---------- check saved entries for duplicates (any time) ---------- */
+function findSavedDuplicates(prof) {
+  const tx = live(P(prof).txns), pairs = [], seen = new Set();
+  const by = {}; tx.forEach(t => { const k = t.account + '|' + t.dir + '|' + Math.round(t.amount * 100); (by[k] = by[k] || []).push(t); });
+  Object.values(by).forEach(g => {
+    if (g.length < 2) return;
+    g.sort((a, b) => a.date.localeCompare(b.date));
+    for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length && daysBetween(g[i].date, g[j].date) <= 5; j++) {
+      const a = g[i], b = g[j];
+      if (seen.has(a.id) || seen.has(b.id)) continue;
+      if ((a.notDup || []).includes(b.id) || (b.notDup || []).includes(a.id)) continue;
+      if (a.batch && a.batch === b.batch) continue; // two rows of the same statement are two real payments
+      const s = dupScore(b.source === 'import' ? b : a, b.source === 'import' ? a : b);
+      if (!s) continue;
+      seen.add(a.id); seen.add(b.id);
+      pairs.push({ a, b, s });
+    }
+  });
+  return pairs.sort((x, y) => (x.s.lvl === 'sure' ? 0 : 1) - (y.s.lvl === 'sure' ? 0 : 1) || y.a.date.localeCompare(x.a.date));
+}
+function dupCheckModal(prof = 'me') {
+  const pairs = findSavedDuplicates(prof);
+  const who = { me: S.settings.meName, wife: wifeName(), parents: "Papa's account" }[prof];
+  const line = t => `<div class="small"><b>${fmtDate(t.date)}</b> · ${esc(accName(prof, t.account))} · ${t.source === 'import' ? '🏦 statement' : t.source === 'bill' ? '🧾 bill paid' : '✍️ added by you'}</div><div class="small muted" style="white-space:normal">${esc(t.desc)}</div>`;
+  const body = pairs.length ? `<p class="muted" style="margin-top:0">Found <b>${pairs.length}</b> pair${pairs.length === 1 ? '' : 's'} that look like the same payment saved twice. For each, keep one or mark them as two different payments.</p>
+  ${pairs.map((p, i) => { const keep = p.a.source === 'import' && p.b.source !== 'import' ? p.a : p.b.source === 'import' && p.a.source !== 'import' ? p.b : (p.a.reviewed ? p.a : p.b); const drop = keep === p.a ? p.b : p.a;
+    return `<div class="card" style="margin-bottom:12px;padding:14px" data-pair="${i}"><div class="flex" style="margin-bottom:8px"><span class="pill ${p.s.lvl === 'sure' ? 'red' : 'amb'}">${p.s.lvl === 'sure' ? 'Duplicate' : 'Possible duplicate'}</span><b class="num">${p.a.dir === 'dr' ? '−' : '+'}${rs(p.a.amount, true)}</b><span class="small muted">${esc(p.s.why)}</span></div>
+    <div class="grid g2" style="gap:10px"><div>${line(p.a)}</div><div>${line(p.b)}</div></div>
+    <div class="flex mt" style="margin-top:10px"><button class="btn sm pri" data-dk="${i}" data-keep="${keep.id}" data-drop="${drop.id}">Remove duplicate (keep ${keep.source === 'import' ? 'statement entry' : 'one'})</button><button class="btn sm" data-dn="${i}">Not a duplicate</button></div></div>`; }).join('')}`
+    : emptyBox('✅', 'No duplicates found', 'All saved entries in ' + esc(who) + ' look unique.');
+  modal('🔍 Duplicate check — ' + esc(who), body, `${pairs.filter(p => p.s.lvl === 'sure').length > 1 ? `<button class="btn" id="dc_all">Remove all ${pairs.filter(p => p.s.lvl === 'sure').length} sure duplicates</button>` : ''}<span style="flex:1"></span><button class="btn pri" data-act="closeModal">Done</button>`, {
+    wide: true, onMount: m => {
+      const removeOne = (keepId, dropId) => { const k = P(prof).txns.find(x => x.id === keepId); if (k) { mergeInto(prof, k, dropId); touch(k); } };
+      $$('[data-dk]', m).forEach(b => b.onclick = () => { removeOne(b.dataset.keep, b.dataset.drop); save(); b.closest('[data-pair]').innerHTML = '<div class="small" style="color:var(--grn)">✓ Duplicate removed</div>'; rerender(); });
+      $$('[data-dn]', m).forEach(b => b.onclick = () => { const p = pairs[+b.dataset.dn]; p.a.notDup = [...(p.a.notDup || []), p.b.id]; p.b.notDup = [...(p.b.notDup || []), p.a.id]; touch(p.a); touch(p.b); save(); b.closest('[data-pair]').innerHTML = '<div class="small muted">Marked as two different payments</div>'; });
+      if ($('#dc_all', m)) $('#dc_all', m).onclick = () => { $$('[data-dk]', m).forEach(b => { if (pairs[+b.dataset.dk].s.lvl === 'sure') b.click(); }); toast('Sure duplicates removed'); };
+    }
+  });
+}
+Object.assign(PACT, { dupCheck: el => dupCheckModal(el.dataset.prof || 'me') });
+
+/* ============ BlueWave Finance — Fixed payments (EMI, insurance, SIP…) ============ */
+const FTYPES2 = {
+  emi: { label: 'Loan EMI', icon: '🏦', cat: 'emi', group: 'loans' },
+  term: { label: 'Term insurance', icon: '🛡️', cat: 'insurance', group: 'ins' },
+  life: { label: 'Life insurance / ULIP', icon: '💚', cat: 'insurance', group: 'ins' },
+  health: { label: 'Health insurance', icon: '🏥', cat: 'insurance', group: 'ins' },
+  vehicle: { label: 'Vehicle insurance', icon: '🚗', cat: 'insurance', group: 'ins' },
+  sip: { label: 'Mutual fund SIP', icon: '📈', cat: 'invest', group: 'inv' },
+  stocks: { label: 'Stocks / other investing', icon: '💹', cat: 'invest', group: 'inv' },
+  rd: { label: 'RD / PPF / NPS / SSY', icon: '🏛️', cat: 'invest', group: 'inv' },
+  other: { label: 'Other fixed payment', icon: '🔒', cat: 'other', group: 'other' },
+};
+const FGROUPS = [['loans', '🏦 Loans & EMIs'], ['ins', '🛡️ Insurance'], ['inv', '📈 Investing & SIPs'], ['other', '🔒 Other fixed payments']];
+function isFixed(b) { return b.kind === 'fixed' || (b.kind !== 'sub' && ['insurance', 'emi', 'invest'].includes(b.cat)); }
+function fixedType(b) { if (b.ftype && FTYPES2[b.ftype]) return b.ftype; return b.cat === 'emi' ? 'emi' : b.cat === 'insurance' ? 'life' : b.cat === 'invest' ? 'sip' : 'other'; }
+function instalments(b) {
+  const td = today(); const start = b.startDate || null;
+  let total = b.tenure || null;
+  if (!total && start && b.endDate && b.cycle !== 'once') { total = 0; let d = start; while (d <= b.endDate && total < 1200) { total++; d = addCycle(d, b.cycle); } }
+  let done = null;
+  if (start && b.cycle !== 'once') { done = 0; let d = start; while (d <= td && done < 1200 && (!total || done < total)) { done++; d = addCycle(d, b.cycle); } }
+  const end = b.endDate || (start && total ? addCycle(start, b.cycle, total - 1) : null);
+  const paidRec = (b.payments || []).reduce((s, p) => s + p.amount, 0);
+  return { total, done, left: total != null && done != null ? Math.max(0, total - done) : null, end, pct: total && done != null ? Math.min(1, done / total) : null, paidRec, paidCount: (b.payments || []).length };
+}
+function emiOutstanding(b, done) { if (!b.principal || !b.rate || b.cycle !== 'monthly' || done == null) return null; const r = b.rate / 1200, P0 = +b.principal; return Math.max(0, P0 * Math.pow(1 + r, done) - b.amount * (Math.pow(1 + r, done) - 1) / r); }
+function fixedCard(b) {
+  const ft = FTYPES2[fixedType(b)], I = instalments(b), st = b.status === 'active' && b.nextDue ? billStatus(b) : null;
+  const out = fixedType(b) === 'emi' ? emiOutstanding(b, I.done) : null;
+  const facts = [];
+  if (b.provider) facts.push(esc(b.provider));
+  if (b.refNo) facts.push('No. ' + esc(b.refNo));
+  if (b.account) facts.push('from ' + esc(accName('me', b.account)));
+  let stats = '';
+  if (ft.group === 'loans') stats = `${I.left != null ? `<span class="pill vio">${I.left} EMIs left</span>` : ''}${out != null ? `<span class="pill red">Outstanding ~${rsShort(out)}</span>` : ''}${I.end ? `<span class="pill">Last EMI ${fmtDate(I.end)}</span>` : ''}`;
+  if (ft.group === 'ins') stats = `${b.cover ? `<span class="pill grn">Cover ${rsShort(b.cover)}</span>` : ''}${I.left != null ? `<span class="pill vio">${I.left} premiums left</span>` : ''}${b.coverTill ? `<span class="pill">Covered till ${fmtDate(b.coverTill)}</span>` : I.end ? `<span class="pill">Premiums till ${fmtDate(I.end)}</span>` : ''}`;
+  if (ft.group === 'inv') { const inv = I.done != null ? I.done * b.amount : I.paidRec; stats = `${inv ? `<span class="pill gold">Invested ~${rsShort(inv)}</span>` : ''}${b.startDate ? `<span class="pill">Since ${fmtDate(b.startDate)}</span>` : ''}${I.left != null ? `<span class="pill vio">${I.left} instalments left</span>` : ''}`; }
+  if (ft.group === 'other' && I.left != null) stats = `<span class="pill vio">${I.left} left</span>`;
+  return `<div class="card hov" style="cursor:pointer" data-act="editBill" data-id="${b.id}"><div class="flex" style="flex-wrap:nowrap;align-items:flex-start"><div class="ico" style="width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:22px;background:linear-gradient(145deg,rgba(255,255,255,.18),rgba(255,255,255,.04));flex:none">${ft.icon}</div>
+    <div style="flex:1;min-width:0"><div class="b" style="font-size:15px">${esc(b.name)}${b.forWho === 'parents' ? ' <span class="pill vio">👪</span>' : ''}</div><div class="small muted">${ft.label}${facts.length ? ' · ' + facts.join(' · ') : ''}</div></div>
+    <div style="text-align:right;flex:none"><div class="num b" style="font-size:18px">${rs(b.amount)}</div><div class="small muted">${CYCLES[b.cycle].toLowerCase()}</div></div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${b.autopay ? '<span class="pill acc">Auto-debit</span>' : '<span class="pill amb">Pay manually</span>'}${stats}</div>
+    ${I.pct != null ? `<div class="goal"><div class="gbar" style="height:8px;margin:12px 0 4px"><i class="hb" style="width:${I.pct * 100}%"></i></div><div class="small muted">${I.done} of ${I.total} paid · ${Math.round(I.pct * 100)}%</div></div>` : ''}
+    <div class="flex" style="margin-top:12px">${st ? `<span class="small">Next: <b>${fmtDate(b.nextDue)}</b></span><span class="pill ${st.cls} ${st.cls === 'red' ? 'pulse' : ''}">${st.txt}</span>` : `<span class="pill">${b.status === 'done' ? 'Completed' : b.status === 'paused' ? 'Paused' : 'Stopped'}</span>`}<span class="sp"></span>${b.status === 'active' ? `<button class="btn sm" data-act="payBill" data-id="${b.id}" data-prof="me">Mark paid</button>` : ''}</div></div>`;
+}
+VIEWS.fixed = () => {
+  const all = live(P('me').bills).filter(isFixed), act = all.filter(b => b.status === 'active');
+  const flt = VIEW.sub.fxf || 'active', shown = flt === 'active' ? act : all.filter(b => b.status !== 'active');
+  const month = act.reduce((s, b) => s + monthlyEq(b), 0), auto = act.filter(b => b.autopay).reduce((s, b) => s + monthlyEq(b), 0);
+  const grpAmt = g => act.filter(b => FTYPES2[fixedType(b)].group === g).reduce((s, b) => s + monthlyEq(b), 0);
+  const td = today(), next = act.flatMap(b => occurrences(b, td, addDays(td, 45)).slice(0, 1).map(d => ({ b, d }))).sort((a, b) => a.d.localeCompare(b.d));
+  const sugg = recurringSuggestions('me').filter(s => s.kind === 'fixed');
+  const inc = (() => { const ms = monthsWithData(['me']).slice(0, 3); return ms.length ? ms.reduce((s, k) => s + totals(txIn('me', ...monthRange(k))).inc, 0) / ms.length : 0; })();
+  const pLoans = live(P('parents').loans || []);
+  const donutItems = FGROUPS.map(([g, l], i) => ({ label: l, value: grpAmt(g), color: ['#b18cff', '#34e89e', '#fbbf24', '#64748b'][i] })).filter(x => x.value);
+  return `<div class="grid g4">${kpi('🔒 Fixed per month', rs(month), act.length + ' active · ' + rs(month * 12) + ' a year', 'gold')}${kpi('🏦 Loans & EMIs', rs(grpAmt('loans')), 'per month', 'vio')}${kpi('🛡️ Insurance', rs(grpAmt('ins')), 'per month (yearly ÷ 12)', 'grn')}${kpi('📈 Investing', rs(grpAmt('inv')), 'per month · not counted as spending', 'acc')}</div>
+  ${inc ? `<div class="alert ${month / inc > .5 ? 'amb' : 'acc'} mt">📊 <div>Fixed payments take <b>${Math.round(month / inc * 100)}%</b> of your average monthly income (${rs(inc)}). Auto-debited: ${rs(auto)} a month — keep that much in the linked accounts before each date.</div></div>` : ''}
+  ${sugg.length ? `<div class="card mt"><h3>✨ Found in your statements <small>regular EMI / insurance / SIP debits not added yet</small></h3><div class="list">${sugg.slice(0, 10).map(s => `<div class="row"><div class="ico">${catIcon(s.cat)}</div><div class="mid"><div class="t1">${esc(s.name)} · ${rs(s.amount)} ${CYCLES[s.cycle].toLowerCase()}</div><div class="t2">Seen ${s.count}× · last ${fmtDate(s.last)} · next expected ${fmtDate(s.next)}${s.autopay ? ' · auto-debit' : ''}</div></div><button class="btn sm pri" data-act="addSugg" data-k="${esc(s.key)}">Add</button><button class="btn sm ghost" data-act="dismissSugg" data-k="${esc(s.key)}">Ignore</button></div>`).join('')}</div></div>` : ''}
+  <div class="grid g21 mt"><div class="card"><h3>📅 Next debits <small>45 days</small></h3>${next.length ? timeline(next.map(x => ({ d: x.d, name: x.b.name, amount: x.b.amount, icon: FTYPES2[fixedType(x.b)].icon, cls: billStatus(x.b, x.d).cls })), td, addDays(td, 45)) : emptyBox('📅', 'Nothing due in the next 45 days', '')}</div>
+  <div class="card"><h3>🍩 Split per month</h3>${donut(donutItems, 'Per month', month)}</div></div>
+  <div class="flex mt" style="margin-bottom:6px"><div class="seg">${[['active', 'Active'], ['inactive', 'Completed / stopped']].map(([k, l]) => `<button class="${flt === k ? 'on' : ''}" data-act="fxf" data-f="${k}">${l}</button>`).join('')}</div><span class="sp" style="flex:1"></span><button class="btn" data-act="icsAll">📆 Calendar reminders</button><button class="btn pri" data-act="fixedAdd">＋ Fixed payment</button></div>
+  ${shown.length ? FGROUPS.map(([g, l]) => { const list = shown.filter(b => FTYPES2[fixedType(b)].group === g); return list.length ? `<div class="sec">${l}</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${list.sort((a, b) => (a.nextDue || '9').localeCompare(b.nextDue || '9')).map(fixedCard).join('')}</div>` : ''; }).join('')
+    : `<div class="card mt">${emptyBox('🔒', flt === 'active' ? 'No fixed payments yet' : 'Nothing completed yet', 'Add your loan EMIs, term / health / life insurance premiums, mutual fund SIPs, RD / PPF and other regular debits.', flt === 'active' ? `<button class="btn pri sm" data-act="fixedAdd">＋ Add fixed payment</button>` : '')}</div>`}
+  ${pLoans.length ? `<div class="sec">👪 Paid from Papa's account</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${pLoans.map(l => { const c = loanCalc(l); return `<div class="card hov" style="cursor:pointer" data-act="go" data-tab="parents"><div class="flex"><span style="font-size:22px">🚗</span><b style="flex:1">${esc(l.name)}</b><b class="num">${rs(l.emi)}</b></div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${c.left != null ? `<span class="pill vio">${c.left} EMIs left</span>` : ''}${c.next ? `<span class="pill">Next ${fmtDate(c.next)}</span>` : ''}</div></div>`; }).join('')}</div>` : ''}`;
+};
+function fixedModal(id, preset) {
+  const b = id ? P('me').bills.find(x => x.id === id) : null;
+  const d = Object.assign({ ftype: 'sip', name: '', provider: '', refNo: '', amount: '', cycle: 'monthly', nextDue: addDays(today(), 7), startDate: '', endDate: '', tenure: '', autopay: true, account: '', match: '', cover: '', coverTill: '', principal: '', rate: '', fund: '', status: 'active', notes: '', forWho: '' }, b ? Object.assign({}, b, { ftype: fixedType(b) }) : {}, preset || {});
+  const ty = d.ftype, g = FTYPES2[ty].group;
+  modal(b ? 'Edit ' + esc(b.name) : '🔒 Add fixed payment', `
+  <div class="frow"><div class="fld"><label>Type</label><select class="inp" id="fx_ty">${Object.entries(FTYPES2).map(([k, v]) => `<option value="${k}" ${k === ty ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}</select></div>
+  <div class="fld"><label>Name</label><input class="inp" id="fx_n" value="${esc(d.name)}" placeholder="${{ loans: 'e.g. Home loan, Personal loan', ins: 'e.g. HDFC Click2Protect, Care Health', inv: 'e.g. Parag Parikh Flexi Cap SIP', other: 'e.g. Society maintenance' }[g]}"></div>
+  <div class="fld"><label>${{ loans: 'Bank / lender', ins: 'Insurer', inv: 'AMC / platform', other: 'Paid to' }[g]}</label><input class="inp" id="fx_p" value="${esc(d.provider)}" placeholder="${{ loans: 'SBI, Bajaj Finance…', ins: 'Axis Max Life, LIC…', inv: 'Zerodha Coin, Groww…', other: '' }[g]}"></div></div>
+  <div class="frow"><div class="fld"><label>Amount (₹)</label><input class="inp" id="fx_a" type="number" inputmode="decimal" value="${esc(d.amount)}"></div>
+  <div class="fld"><label>Repeats</label><select class="inp" id="fx_c">${Object.entries(CYCLES).filter(([k]) => k !== 'weekly').map(([k, l]) => `<option value="${k}" ${d.cycle === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  <div class="fld"><label>Next debit date</label><input class="inp" id="fx_nd" type="date" value="${esc(d.nextDue)}"></div>
+  <div class="fld"><label>${{ loans: 'Loan / account no.', ins: 'Policy no.', inv: 'Folio / SIP no.', other: 'Reference no.' }[g]}</label><input class="inp" id="fx_r" value="${esc(d.refNo)}"></div></div>
+  <div class="frow"><div class="fld"><label>${g === 'loans' ? 'First EMI date' : g === 'ins' ? 'Policy start date' : 'Start date'}</label><input class="inp" id="fx_sd" type="date" value="${esc(d.startDate)}"></div>
+  <div class="fld"><label>${g === 'loans' ? 'Tenure (number of EMIs)' : g === 'ins' ? 'Number of premiums' : 'Number of instalments (optional)'}</label><input class="inp" id="fx_t" type="number" value="${esc(d.tenure)}"></div>
+  <div class="fld"><label>…or end date</label><input class="inp" id="fx_ed" type="date" value="${esc(d.endDate)}"></div></div>
+  ${g === 'loans' ? `<div class="frow"><div class="fld"><label>Loan amount (₹)</label><input class="inp" id="fx_pr" type="number" value="${esc(d.principal)}"></div><div class="fld"><label>Interest % a year</label><input class="inp" id="fx_ra" type="number" step="0.01" value="${esc(d.rate)}"></div></div>` : ''}
+  ${g === 'ins' ? `<div class="frow"><div class="fld"><label>Cover / sum assured (₹)</label><input class="inp" id="fx_cv" type="number" value="${esc(d.cover)}"></div><div class="fld"><label>Covered till</label><input class="inp" id="fx_ct" type="date" value="${esc(d.coverTill)}"></div></div>` : ''}
+  <div class="frow"><div class="fld"><label>Debited from</label><select class="inp" id="fx_ac">${accOptions('me', d.account)}</select></div><div class="fld"><label>Word in bank statement</label><input class="inp" id="fx_m" value="${esc(d.match)}" placeholder="e.g. NACH-MUT, MAX LIFE, BAJAJ"></div>
+  <div class="fld"><label>Status</label><select class="inp" id="fx_st">${[['active', 'Active'], ['paused', 'Paused'], ['done', 'Completed'], ['cancelled', 'Stopped']].map(([k, l]) => `<option value="${k}" ${d.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+  <div class="frow"><label class="chk"><input type="checkbox" id="fx_au" ${d.autopay ? 'checked' : ''}> Auto-debit (NACH / mandate / standing instruction)</label><label class="chk"><input type="checkbox" id="fx_fp" ${d.forWho === 'parents' ? 'checked' : ''}> 👪 Paid for ${esc(S.settings.parentsName || 'Parents')}</label></div>
+  <div class="fld"><label>Notes</label><input class="inp" id="fx_no" value="${esc(d.notes)}" placeholder="e.g. nominee, agent contact, renewal steps"></div>
+  ${b && (b.payments || []).length ? `<div class="sec">Recent payments</div>${b.payments.slice(-6).reverse().map(p => `<div class="small">${fmtDate(p.date)} · ${rs(p.amount)}${p.auto ? ' · from statement' : ''}</div>`).join('')}` : ''}
+  <div class="small muted mt">Payments are matched automatically when you import a statement (using the word above), so the next date moves forward by itself.</div>`,
+    `${b ? '<button class="btn dan" id="fx_del">Delete</button><button class="btn" id="fx_ics">📆 To calendar</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="fx_s">Save</button>`, {
+    onMount: m => {
+      const val = () => { const t = $('#fx_ty', m).value; return { kind: 'fixed', ftype: t, cat: FTYPES2[t].cat, name: $('#fx_n', m).value.trim(), provider: $('#fx_p', m).value.trim(), amount: +$('#fx_a', m).value || 0, cycle: $('#fx_c', m).value, nextDue: $('#fx_nd', m).value, refNo: $('#fx_r', m).value.trim(), startDate: $('#fx_sd', m).value, tenure: +$('#fx_t', m).value || 0, endDate: $('#fx_ed', m).value, principal: $('#fx_pr', m) ? +$('#fx_pr', m).value || 0 : (d.principal || 0), rate: $('#fx_ra', m) ? +$('#fx_ra', m).value || 0 : (d.rate || 0), cover: $('#fx_cv', m) ? +$('#fx_cv', m).value || 0 : (d.cover || 0), coverTill: $('#fx_ct', m) ? $('#fx_ct', m).value : (d.coverTill || ''), account: $('#fx_ac', m).value, match: $('#fx_m', m).value.trim(), status: $('#fx_st', m).value, autopay: $('#fx_au', m).checked, forWho: $('#fx_fp', m).checked ? 'parents' : '', method: $('#fx_au', m).checked ? 'Auto-debit' : 'UPI', notes: $('#fx_no', m).value }; };
+      $('#fx_ty', m).onchange = () => fixedModal(id, val());
+      $('#fx_s', m).onclick = () => {
+        const v = val(); if (!v.name) { toast('Give it a name'); return; } if (!v.amount) { toast('Enter the amount'); return; } if (!v.nextDue && v.status === 'active') { toast('Set the next debit date'); return; }
+        if (!v.match) v.match = v.provider || v.name;
+        if (b) { if (b.amount && +b.amount !== v.amount) { b.priceLog = b.priceLog || []; b.priceLog.push({ date: today(), from: b.amount, to: v.amount }); } Object.assign(b, v); touch(b); }
+        else { const nb = touch(Object.assign({ id: uid(), payments: [], priceLog: [] }, v)); P('me').bills.push(nb); linkBills('me', live(P('me').txns).filter(t => t.date >= addDays(nb.nextDue, -40))); }
+        save(); closeModal(); render(); toast('Saved');
+      };
+      if (b) { $('#fx_del', m).onclick = () => confirmBox('Delete ' + esc(b.name) + '?', 'Its payment history will be removed too.', 'Delete', () => { removeRec(P('me').bills, b.id); save(); render(); }, true); $('#fx_ics', m).onclick = () => download(b.name.replace(/\W+/g, '_') + '.ics', icsFor([b]), 'text/calendar'); }
+    }
+  });
+}
+const _billModal = billModal;
+billModal = function (id, kind, preset) {
+  const b = id ? P('me').bills.find(x => x.id === id) : null;
+  if ((b && isFixed(b)) || (!b && kind === 'fixed')) return fixedModal(id, preset && !b ? Object.assign({}, preset, { ftype: preset.cat === 'emi' ? 'emi' : preset.cat === 'insurance' ? 'life' : preset.cat === 'invest' ? 'sip' : 'other' }) : null);
+  return _billModal(id, kind, preset);
+};
+Object.assign(PACT, { fixedAdd: () => fixedModal(), fxf: el => { VIEW.sub.fxf = el.dataset.f; rerender(); } });
 
 /* ============ BlueWave Finance — events & boot ============ */
 const ACT = {
