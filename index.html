@@ -520,6 +520,10 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
   .fe-amt{margin:8px 2px 6px}.fe-amt b{font-size:28px}
   .fe-tabs button{font-size:12.5px;padding:7px 4px}
 }
+.blist{display:flex;flex-direction:column;gap:10px}
+.bit{padding:14px}.bit .mid{flex:1;min-width:0}.bit .mid b{word-break:break-all}.bit.off{opacity:.55}.bit.err{border-color:var(--red)}
+.bstats{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:10px;font-size:13px;color:var(--tx2)}
+.bstats .grn{color:var(--grn)}.bstats .amb{color:var(--amb)}.bstats .vio{color:var(--vio)}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -765,7 +769,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.0';
+const APP_VER = '3.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1596,8 +1600,8 @@ function rulesPanel(profKey) {
 function importPanel(profKey) {
   return `<div class="grid g21"><div class="card"><h3>⬆ Import a bank statement ${profKey === 'wife' ? '<small>into ' + esc(wifeName()) + '’s section</small>' : profKey === 'parents' ? '<small>into Papa’s account section</small>' : ''}</h3>
   <p class="muted" style="margin-top:0">PDF (Kotak old & new formats tested), CSV or Excel. The file is read <b>only on this device</b> — nothing is uploaded.</p>
-  <div class="frow"><div class="fld"><label>Statement file</label><input class="inp" type="file" id="imp_file" accept=".pdf,.csv,.xlsx,.xls,.txt"></div><div class="fld"><label>PDF password (if any)</label><input class="inp" id="imp_pw" type="password" autocomplete="off" placeholder="Leave empty if none"></div></div>
-  <button class="btn pri" data-act="readStatement" data-prof="${profKey}">Read statement</button>
+  <div class="frow"><div class="fld"><label>Statement file(s) — you can pick several</label><input class="inp" type="file" id="imp_file" multiple accept=".pdf,.csv,.xlsx,.xls,.txt"></div><div class="fld"><label>PDF password (if any)</label><input class="inp" id="imp_pw" type="password" autocomplete="off" placeholder="Leave empty if none"></div></div>
+  <button class="btn pri" data-act="readStatement" data-prof="${profKey}">Read statement(s)</button>
   <div id="imp_msg" class="mt small muted"></div></div>
   <div class="card"><h3>💡 Tips</h3><div class="small muted">
   • Duplicates are skipped automatically, so overlapping periods are fine.<br>• The account is detected from the account number; you'll be asked once to link it.<br>
@@ -1605,8 +1609,9 @@ function importPanel(profKey) {
 }
 let IMPORT = null;
 async function readStatement(profKey) {
-  const f = $('#imp_file').files[0], msg = $('#imp_msg');
+  const fl = [...$('#imp_file').files], f = fl[0], msg = $('#imp_msg');
   if (!f) { toast('Choose a statement file first'); return; }
+  if (fl.length > 1) return readBatch(profKey, fl, $('#imp_pw').value || undefined);
   msg.textContent = 'Reading ' + f.name + '…';
   try {
     let res;
@@ -1652,16 +1657,23 @@ function parseTable(name, buf) {
 }
 function csvRows(text) { const out = []; let row = [], cur = '', q = false; for (let i = 0; i < text.length; i++) { const ch = text[i]; if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; } else if (ch === '"') q = true; else if (ch === ',') { row.push(cur); cur = ''; } else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); out.push(row); row = []; cur = ''; } else cur += ch; } if (cur || row.length) { row.push(cur); out.push(row); } return out; }
 
+function detectAcc(profKey, meta) {
+  const prof = P(profKey), last4 = (meta.accountNo || '').replace(/\D/g, '').slice(-4);
+  let acc = last4 && prof.accounts.find(a => !a.deleted && a.last4 === last4);
+  if (!acc && meta.bank) { const cand = prof.accounts.filter(a => !a.deleted && a.bank === meta.bank && (!meta.accType || a.type === meta.accType) && !a.last4); if (cand.length === 1) acc = cand[0]; }
+  return acc ? acc.id : '';
+}
+function buildRows(I, extraPool) {
+  const prevAct = {}, prevCat = {}, prevSel = {}; (I.rows || []).forEach(r => { if (r.userAct) prevAct[r.seq] = r.action; if (r.userSet) prevCat[r.seq] = r.cat; if (r.userSel) prevSel[r.seq] = r.sel; });
+  I.rows = I.txns.map((t, i) => { const x = { ...t, account: I.accId, seq: i }; const c = classify(x, I.profKey); Object.assign(x, c); return x; });
+  if (I.accId) markDuplicates(I.profKey, I.rows, extraPool); else I.rows.forEach(r => { r.action = 'add'; r.sel = true; });
+  I.rows.forEach(r => { if (prevAct[r.seq]) { r.action = prevAct[r.seq]; r.userAct = true; r.sel = r.action !== 'skip'; } if (prevCat[r.seq]) { r.cat = prevCat[r.seq]; r.conf = 'h'; r.userSet = true; } if (r.seq in prevSel && !r.dup) { r.sel = prevSel[r.seq]; r.userSel = true; } });
+}
 function importPreview() {
   const I = IMPORT, prof = P(I.profKey);
   const last4 = (I.meta.accountNo || '').replace(/\D/g, '').slice(-4);
-  let acc = last4 && prof.accounts.find(a => !a.deleted && a.last4 === last4);
-  if (!acc && I.meta.bank) { const cand = prof.accounts.filter(a => !a.deleted && a.bank === I.meta.bank && (!I.meta.accType || a.type === I.meta.accType) && !a.last4); if (cand.length === 1) acc = cand[0]; }
-  I.accId = I.accId || (acc ? acc.id : '');
-  const prevAct = {}; (I.rows || []).forEach(r => { if (r.userAct) prevAct[r.seq] = r.action; });
-  I.rows = I.txns.map((t, i) => { const x = { ...t, account: I.accId, seq: i }; const c = classify(x, I.profKey); Object.assign(x, c); return x; });
-  if (I.accId) markDuplicates(I.profKey, I.rows); else I.rows.forEach(r => { r.action = 'add'; r.sel = true; });
-  I.rows.forEach(r => { if (prevAct[r.seq]) { r.action = prevAct[r.seq]; r.userAct = true; r.sel = r.action !== 'skip'; } });
+  I.accId = I.accId || detectAcc(I.profKey, I.meta);
+  buildRows(I, I.extraPool);
   const n = I.rows.length, dups = I.rows.filter(r => r.dup === 'sure').length, maybes = I.rows.filter(r => r.dup === 'maybe').length;
   const dates = I.rows.map(r => r.date).sort();
   const balOk = !I.warnings.some(w => /balance/.test(w));
@@ -1676,8 +1688,8 @@ function importPreview() {
   modal('Import preview — ' + esc(I.file), body, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="ip_go">Import ${I.rows.filter(r => r.sel).length} entries</button>`, {
     wide: true, sticky: true, onMount: m => {
       $('#ip_acc', m).onchange = e => { if (e.target.value === '__new') { const nm = prompt('Name for the new account (e.g. SBI NRE):'); if (!nm) { e.target.value = I.accId; return; } const a = touch({ id: uid(), bank: I.meta.bank || '', type: I.meta.accType || 'Savings', name: nm, last4, status: 'active' }); prof.accounts.push(a); I.accId = a.id; save(); importPreview(); } else { I.accId = e.target.value; importPreview(); } };
-      $('#ip_all', m).onchange = e => { $$('[data-ip]', m).forEach(c => { c.checked = e.target.checked; I.rows[+c.dataset.ip].sel = e.target.checked; }); upd(); };
-      $$('[data-ip]', m).forEach(c => c.onchange = () => { const r = I.rows[+c.dataset.ip]; r.sel = c.checked; if (r.dup) { r.action = c.checked ? (r.action === 'skip' ? 'keep' : r.action) : 'skip'; r.userAct = true; const s = $(`[data-ipa="${c.dataset.ip}"]`, m); if (s) s.value = r.action; } upd(); });
+      $('#ip_all', m).onchange = e => { $$('[data-ip]', m).forEach(c => { c.checked = e.target.checked; I.rows[+c.dataset.ip].sel = e.target.checked; I.rows[+c.dataset.ip].userSel = true; }); upd(); };
+      $$('[data-ip]', m).forEach(c => c.onchange = () => { const r = I.rows[+c.dataset.ip]; r.sel = c.checked; r.userSel = true; if (r.dup) { r.action = c.checked ? (r.action === 'skip' ? 'keep' : r.action) : 'skip'; r.userAct = true; const s = $(`[data-ipa="${c.dataset.ip}"]`, m); if (s) s.value = r.action; } upd(); });
       $$('[data-ipa]', m).forEach(s => s.onchange = () => { const r = I.rows[+s.dataset.ipa]; r.action = s.value; r.userAct = true; r.sel = s.value !== 'skip'; const c = $(`[data-ip="${s.dataset.ipa}"]`, m); if (c) c.checked = r.sel; s.closest('tr').style.opacity = r.sel ? '' : '.5'; upd(); });
       $$('[data-ipc]', m).forEach(s => s.onchange = () => { const r = I.rows[+s.dataset.ipc]; r.cat = s.value; r.conf = 'h'; r.userSet = true; });
       const upd = () => { $('#ip_go', m).textContent = 'Import ' + I.rows.filter(r => r.sel).length + ' entries'; };
@@ -1686,8 +1698,17 @@ function importPreview() {
   });
 }
 function doImport(link) {
-  const I = IMPORT, prof = P(I.profKey);
+  const I = IMPORT;
   if (!I.accId) { toast('Choose which account this statement belongs to'); return; }
+  const st = importRows(I, link);
+  save(); closeModal();
+  toast(`Imported ${st.added}${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged with your entries' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 4000);
+  IMPORT = null;
+  VIEW.sub[I.profKey === 'me' ? 'money' : I.profKey] = st.review ? 'review' : 'txns';
+  render();
+}
+function importRows(I, link) {
+  const prof = P(I.profKey);
   const acc = prof.accounts.find(a => a.id === I.accId);
   const last4 = (I.meta.accountNo || '').replace(/\D/g, '').slice(-4);
   if (link && last4 && acc) { acc.last4 = last4; if (I.meta.accType && !acc.type) acc.type = I.meta.accType; touch(acc); }
@@ -1702,12 +1723,7 @@ function doImport(link) {
   // friend entries for auto-matched friends
   added.filter(t => t.cat === 'friend' && t.friendId).forEach(t => { const f = prof.friends.find(x => x.id === t.friendId); if (f) addFriendEntryFromTxn(f, t); });
   const linked = linkBills(I.profKey, added);
-  save(); closeModal();
-  const rv = added.filter(needsReview).length;
-  toast(`Imported ${added.length} entries${skipped ? ' · ' + skipped + ' duplicates skipped' : ''}${merged ? ' · ' + merged + ' merged with your entries' : ''}${linked ? ' · ' + linked + ' bill payments matched' : ''}${rv ? ' · ' + rv + ' to review' : ''}`, 4000);
-  IMPORT = null;
-  VIEW.sub[I.profKey === 'me' ? 'money' : I.profKey] = rv ? 'review' : 'txns';
-  render();
+  return { added: added.length, skipped, merged, linked, review: added.filter(needsReview).length };
 }
 function addFriendEntryFromTxn(f, t, type) {
   f.entries = f.entries || [];
@@ -3082,8 +3098,8 @@ function dupScore(r, e) {
   return null;
 }
 /* one-to-one matching, so two real ₹20 payments on the same day are never merged into one */
-function markDuplicates(prof, rows) {
-  const pool = live(P(prof).txns).filter(e => e.account === rows[0]?.account);
+function markDuplicates(prof, rows, extraPool) {
+  const pool = live(P(prof).txns).concat(extraPool || []).filter(e => e.account === rows[0]?.account);
   const used = new Set();
   rows.forEach(r => { r.dup = null; r.matchId = null; r.why = ''; });
   ['sure', 'maybe'].forEach(level => rows.forEach(r => {
@@ -3105,9 +3121,9 @@ function mergeInto(prof, t, oldId) {
 }
 function dupRowCell(r, i) {
   if (!r.dup) return `<span class="conf ${r.conf}" title="Category confidence"></span>`;
-  const e = P(IMPORT.profKey).txns.find(x => x.id === r.matchId);
+  const e = P(IMPORT.profKey).txns.concat(IMPORT.extraPool || []).find(x => x.id === r.matchId);
   const opts = [['skip', 'Skip — already saved'], ['keep', 'Keep both (not a duplicate)']].concat(e && (e.source === 'manual' || e.source === 'bill') ? [['replace', 'Use bank entry, remove mine']] : []);
-  return `<div style="min-width:190px"><span class="pill ${r.dup === 'sure' ? '' : 'amb'}">${r.dup === 'sure' ? 'Duplicate' : 'Possible duplicate'}</span><div class="small muted" style="margin:3px 0;white-space:normal">${esc(r.why)}${e ? ' · saved: ' + esc((e.payee || e.desc || '').slice(0, 28)) : ''}</div><select class="inp" style="padding:3px 6px" data-ipa="${i}">${opts.map(([k, l]) => `<option value="${k}" ${r.action === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
+  return `<div style="min-width:190px"><span class="pill ${r.dup === 'sure' ? '' : 'amb'}">${r.dup === 'sure' ? 'Duplicate' : 'Possible duplicate'}</span><div class="small muted" style="margin:3px 0;white-space:normal">${esc(r.why)}${e ? (e._file ? ' · also in ' + esc(e._file) : ' · saved: ' + esc((e.payee || e.desc || '').slice(0, 28))) : ''}</div><select class="inp" style="padding:3px 6px" data-ipa="${i}">${opts.map(([k, l]) => `<option value="${k}" ${r.action === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
 }
 
 /* ---------- check saved entries for duplicates (any time) ---------- */
@@ -3859,6 +3875,103 @@ const _addEntryPanel = addEntryPanel;
 addEntryPanel = profKey => `<div class="card" style="max-width:760px;margin-bottom:14px"><div class="flex"><span class="itile big" style="--ic:#3b82f6">⚡</span><div style="flex:1"><b>Quick entry</b><div class="muted small">Tap a category, type the amount, save — 3 taps.</div></div><button class="btn pri" data-act="fastEntry" data-prof="${profKey}">⚡ Open quick entry</button></div></div>` + _addEntryPanel(profKey);
 
 Object.assign(ACT, V3ACT);
+
+/* ============ Import several statements at once ============ */
+let BATCH = null;
+async function readItem(it, pw) {
+  try {
+    let res;
+    if (/\.pdf$/i.test(it.file)) {
+      const pages = await StmtParser.readPdf(window.pdfjsLib, new Uint8Array(await it.f.arrayBuffer()), pw || undefined);
+      res = StmtParser.parseStatement(pages);
+      if (!res.txns.length) throw new Error('No transactions found — if it’s a scanned (image) PDF, download it again as a normal PDF, CSV or Excel.');
+    } else res = parseTable(it.file, await it.f.arrayBuffer());
+    Object.assign(it, { meta: res.meta || {}, txns: res.txns, warnings: res.warnings || [], err: null, needPw: false, include: true, rows: null });
+    it.accId = it.accId || detectAcc(it.profKey, it.meta);
+  } catch (e) {
+    const m = String(e && (e.message || e));
+    it.needPw = /password/i.test(m); it.include = false;
+    it.err = it.needPw ? (pw ? 'Wrong password for this file — try another.' : 'This PDF needs a password.') : m;
+  }
+}
+async function readBatch(profKey, files, pw) {
+  const msg = $('#imp_msg');
+  BATCH = { profKey, items: [] };
+  for (let i = 0; i < files.length; i++) {
+    msg.textContent = `Reading ${i + 1} of ${files.length}: ${files[i].name}…`;
+    const it = { profKey, file: files[i].name, f: files[i] };
+    await readItem(it, pw); BATCH.items.push(it);
+  }
+  msg.textContent = '';
+  batchModal();
+}
+const itFirst = it => it.txns && it.txns.length ? it.txns.map(t => t.date).sort()[0] : '9999';
+function batchPrepare() {
+  const B = BATCH, pools = {};
+  B.items.forEach((it, k) => { it.k = k; it.same = ''; });
+  // same statement picked twice
+  B.items.forEach((it, k) => { if (it.err) return; const sig = it.txns.length + '|' + it.txns.map(t => t.date + t.amount + t.dir).join(',');
+    const o = B.items.slice(0, k).find(x => !x.err && x.sig === sig); it.sig = sig; if (o) { it.same = o.file; if (!it.userInc) it.include = false; } });
+  [...B.items].sort((a, b) => itFirst(a).localeCompare(itFirst(b))).forEach(it => {
+    if (it.err || !it.accId) { it.rows = null; return; }
+    it.extraPool = (pools[it.accId] || []).slice();
+    buildRows(it, it.extraPool);
+    if (it.include) pools[it.accId] = (pools[it.accId] || []).concat(it.rows.filter(r => r.sel).map(r => ({ ...r, id: 'bx' + it.k + '_' + r.seq, source: 'import', _file: it.file })));
+  });
+}
+function batchModal() {
+  batchPrepare();
+  const B = BATCH, its = B.items;
+  let tot = 0, files = 0;
+  const cards = its.map((it, k) => {
+    if (it.err) return `<div class="card bit err"><div class="flex"><span class="itile" style="--ic:#ef4444">${it.needPw ? '🔒' : '⚠️'}</span><div class="mid"><b>${esc(it.file)}</b><div class="small ${it.needPw ? 'muted' : 'dr'}">${esc(it.err)}</div></div></div>
+      ${it.needPw ? `<div class="flex mt"><input class="inp" type="password" autocomplete="off" placeholder="PDF password (often customer ID or date of birth)" data-bpw="${k}" style="flex:1"><button class="btn sm pri" data-act="batchRetry" data-k="${k}">Unlock</button></div>` : ''}</div>`;
+    const dates = it.txns.map(t => t.date).sort(), last4 = (it.meta.accountNo || '').replace(/\D/g, '').slice(-4);
+    const R = it.rows || [], sel = R.filter(r => r.sel).length, sure = R.filter(r => r.dup === 'sure').length, maybe = R.filter(r => r.dup === 'maybe').length, rv = R.filter(r => r.sel && needsReview(r)).length;
+    const cross = R.filter(r => r.dup && r.matchId && String(r.matchId).startsWith('bx')).length;
+    if (it.include && it.accId) { tot += sel; files++; }
+    return `<div class="card bit ${it.include ? '' : 'off'}"><div class="flex" style="align-items:flex-start"><label class="chk" style="margin-top:8px"><input type="checkbox" data-binc="${k}" ${it.include ? 'checked' : ''}></label>
+      <span class="itile" style="--ic:${it.accId ? '#3b82f6' : '#f59e0b'}">🏦</span><div class="mid"><b>${esc(it.file)}</b><div class="small muted">${esc(it.meta.bank || 'Bank not detected')}${it.meta.accType ? ' · ' + esc(it.meta.accType) : ''}${last4 ? ' · a/c ··' + esc(last4) : ''} · ${fmtDate(dates[0])} → ${fmtDate(dates[dates.length - 1])}</div>
+      ${it.same ? `<div class="small" style="color:var(--amb)">⚠ Same statement as “${esc(it.same)}” — left out.</div>` : ''}</div></div>
+      <div class="frow mt"><div class="fld"><label>Import into</label><select class="inp" data-bacc="${k}">${it.accId ? '' : '<option value="">— choose the account —</option>'}${accOptions(it.profKey, it.accId)}<option value="__new">＋ New account…</option></select></div></div>
+      ${it.accId ? `<div class="bstats"><span><b>${it.txns.length}</b> in file</span><span class="grn"><b>${sel}</b> to import</span>${sure ? `<span><b>${sure}</b> already saved${cross ? ` (${cross} in another file here)` : ''}</span>` : ''}${maybe ? `<span class="amb"><b>${maybe}</b> possible duplicate${maybe > 1 ? 's' : ''}</span>` : ''}${rv ? `<span class="vio"><b>${rv}</b> to review later</span>` : ''}<span class="sp"></span><button class="btn sm" data-act="batchReview" data-k="${k}">${maybe ? '⚠ Check rows' : 'See rows'}</button></div>` : `<div class="alert amb mt" style="margin-bottom:0">🏦 <div>Pick the account above — the app remembers it for next time.</div></div>`}</div>`;
+  }).join('');
+  const body = `<div class="alert acc">📚 <div>${its.length} files read on this device. Entries that appear in more than one file (overlapping dates) or are already saved are skipped automatically. Untick a file to leave it out.</div></div><div class="blist">${cards}</div>`;
+  const foot = `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" data-act="batchGo" ${tot ? '' : 'disabled'}>Import all · ${tot} entr${tot === 1 ? 'y' : 'ies'} from ${files} file${files === 1 ? '' : 's'}</button>`;
+  modal('Import ' + its.length + ' statements', body, foot, { wide: true, sticky: true, onMount: m => {
+    $$('[data-binc]', m).forEach(c => c.onchange = () => { const it = its[+c.dataset.binc]; it.include = c.checked; it.userInc = true; batchModal(); });
+    $$('[data-bacc]', m).forEach(s => s.onchange = () => {
+      const it = its[+s.dataset.bacc];
+      if (s.value === '__new') { const nm = prompt('Name for the new account (e.g. SBI NRE):'); if (!nm) { s.value = it.accId; return; } const a = touch({ id: uid(), bank: it.meta.bank || '', type: it.meta.accType || 'Savings', name: nm, last4: (it.meta.accountNo || '').replace(/\D/g, '').slice(-4), status: 'active' }); P(it.profKey).accounts.push(a); save(); it.accId = a.id; }
+      else it.accId = s.value;
+      it.rows = null; batchModal();
+    });
+  } });
+}
+const _doImportSingle = doImport;
+doImport = function (link) {
+  if (IMPORT && IMPORT.fromBatch) { const it = IMPORT; it.link = link; it.fromBatch = false; IMPORT = null; batchModal(); return; }
+  return _doImportSingle(link);
+};
+const _importPanel1 = importPanel;
+importPanel = k => (BATCH && BATCH.profKey === k ? `<div class="alert acc" style="margin-bottom:14px">📚 <div>${BATCH.items.length} statements are read and waiting.</div><span class="sp"></span><button class="btn sm pri" data-act="batchOpen">Continue</button><button class="btn sm ghost" data-act="batchDrop">Discard</button></div>` : '') + _importPanel1(k);
+Object.assign(ACT, {
+  batchOpen: () => batchModal(),
+  batchDrop: () => { BATCH = null; rerender(); },
+  batchRetry: async el => { const k = +el.dataset.k, it = BATCH.items[k], pw = ($(`[data-bpw="${k}"]`) || {}).value; if (!pw) { toast('Type the password'); return; } el.disabled = true; el.textContent = 'Reading…'; await readItem(it, pw); batchModal(); },
+  batchReview: el => { const it = BATCH.items[+el.dataset.k]; it.fromBatch = true; IMPORT = it; closeModal(); importPreview(); },
+  batchGo: () => {
+    const B = BATCH, prof = B.profKey; let st = { added: 0, skipped: 0, merged: 0, linked: 0, review: 0 }, n = 0;
+    [...B.items].filter(it => it.include && !it.err && it.accId).sort((a, b) => itFirst(a).localeCompare(itFirst(b))).forEach(it => {
+      it.extraPool = null; buildRows(it, null);   // re-check against everything saved so far (incl. files imported just before)
+      const s = importRows(it, it.link !== false); Object.keys(st).forEach(x => st[x] += s[x]); n++;
+    });
+    save(); closeModal(); BATCH = null; IMPORT = null;
+    toast(`${n} file${n === 1 ? '' : 's'} · ${st.added} new entries${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 6000);
+    VIEW.sub[prof === 'me' ? 'money' : prof] = st.review ? 'review' : 'txns';
+    render();
+  },
+});
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){const b=document.createElement('div');b.className='toast';b.innerHTML='New version ready — <a href="#" onclick="location.reload();return false">tap to update</a>';document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
