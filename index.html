@@ -4298,6 +4298,7 @@ async function checkLatest(quiet) {
   UPD.checking = true; UPD.err = ''; if (!quiet) rerenderIf('syncup');
   try {
     if (!navigator.onLine) throw new Error('You’re offline — connect to the internet to check.');
+    if (!/^http/.test(location.protocol)) throw new Error('Open the app from its website link to check for updates.');
     const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
     if (!r.ok) throw new Error('Could not reach the app website (' + r.status + ').');
     UPD.latest = (await r.json()).v; UPD.at = nowIso();
@@ -4319,7 +4320,7 @@ window.bwfApplyUpdate = applyUpdate;
 
 VIEWS.syncup = () => {
   const sy = S.settings.sync, n = unsyncedCount(), setUp = !!(sy.url && sy.key);
-  if (!UPD.latest && !UPD.checking && !UPD.err && navigator.onLine) setTimeout(() => checkLatest(true), 50);
+  if (!UPD.latest && !UPD.checking && !UPD.err && navigator.onLine && /^http/.test(location.protocol)) setTimeout(() => checkLatest(true), 50);
   const newer = UPD.latest && verNum(UPD.latest) > verNum(APP_VER);
   const upd = `<div class="card"><h3>⬆️ App update</h3>
     <div class="vrow"><div><small>Installed on this device</small><b>v${APP_VER}</b></div><div><small>Latest available</small><b>${UPD.checking ? '…' : UPD.latest ? 'v' + esc(UPD.latest) : '—'}</b></div></div>
@@ -4367,7 +4368,7 @@ MORE_TILES.splice(MORE_TILES.length - 1, 0, ['syncup', '⟳', 'Sync & Update', '
 const _settingsV2 = VIEWS.settings;
 VIEWS.settings = () => _settingsV2().replace(/<div class="card"><h3>⟳ Sync <small>manual[\s\S]*?<button class="btn sm mt" data-act="copyScript">📋 Copy script<\/button><\/details><\/div>/, `<div class="card"><h3>⟳ Sync & Update</h3><div class="small muted" style="margin-bottom:12px">Sync setup, encryption password and app updates now have their own tab.</div><button class="btn pri" data-act="go" data-tab="syncup">Open Sync & Update →</button></div>`);
 // check quietly on start, and show a badge on the menu when an update exists
-setTimeout(() => { if (navigator.onLine) checkLatest(true).then(() => { if (UPD.latest && verNum(UPD.latest) > verNum(APP_VER)) { const b = document.createElement('div'); b.className = 'toast upd'; b.innerHTML = '✨ Version ' + esc(UPD.latest) + ' is ready — <b>tap to update</b>'; b.onclick = applyUpdate; $$('.toast.upd').forEach(x => x.remove()); document.body.appendChild(b); } }); }, 4000);
+setTimeout(() => { if (navigator.onLine && /^http/.test(location.protocol)) checkLatest(true).then(() => { if (UPD.latest && verNum(UPD.latest) > verNum(APP_VER)) { const b = document.createElement('div'); b.className = 'toast upd'; b.innerHTML = '✨ Version ' + esc(UPD.latest) + ' is ready — <b>tap to update</b>'; b.onclick = applyUpdate; $$('.toast.upd').forEach(x => x.remove()); document.body.appendChild(b); } }); }, 4000);
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
