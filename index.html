@@ -542,6 +542,13 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
 .toast.upd{pointer-events:auto;cursor:pointer;background:linear-gradient(135deg,#42a5f5,#1e88e5);color:#fff;border:0;font-weight:600;box-shadow:0 10px 28px rgba(30,136,229,.45);z-index:200}
 .vrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.vrow>div{flex:1;min-width:110px;background:var(--card2);border-radius:14px;padding:10px 12px}.vrow small{display:block;color:var(--tx3);font-size:11.5px}.vrow b{display:block;font-size:18px;margin:2px 0}
 .btn.big{padding:12px 22px;font-size:15px}
+.csubs{display:flex;flex-direction:column;gap:2px;margin-top:8px;font-size:11.5px;color:var(--tx3)}.csubs span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.csubs b{color:var(--tx2);font-weight:650}
+.chips.subc{padding-left:10px;border-left:3px solid var(--blue);margin-left:2px}
+.fe-grps{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 10px;scrollbar-width:none}.fe-grps::-webkit-scrollbar{display:none}
+.fe-grp{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:74px;padding:7px 6px;border-radius:14px;border:1px solid var(--line);background:var(--card2);cursor:pointer;color:var(--tx2)}
+.fe-grp span{font-size:20px}.fe-grp small{font-size:10px;font-weight:700;text-align:center;line-height:1.15}
+.fe-grp.on{background:color-mix(in srgb,var(--ic) 25%,transparent);border-color:var(--ic);color:var(--tx)}
+.cmg{margin-bottom:10px}.cmgh{font-weight:800;font-size:13.5px;padding:8px 2px 6px;border-bottom:1px solid var(--line);margin-bottom:6px}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -877,7 +884,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.7';
+const APP_VER = '3.8';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -902,30 +909,66 @@ const compact = s => String(s || '').toUpperCase().replace(/\s+/g, '');
 const fyOf = s => { const d = parseISO(s); const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; return 'FY ' + y + '-' + String(y + 1).slice(2); };
 
 /* ---------- categories ---------- */
-const CATS = [
-  // expense
-  ['grocery', 'Grocery', '🛒', 'exp'], ['food', 'Food & dining', '🍽️', 'exp'], ['shopping', 'Shopping', '🛍️', 'exp'],
-  ['medical', 'Hospital / Medical', '🏥', 'exp'], ['cab', 'Transport · Cab', '🚕', 'exp'], ['bus', 'Transport · Bus', '🚌', 'exp'],
-  ['ferry', 'Transport · Ferry', '⛴️', 'exp'], ['fuel', 'Fuel', '⛽', 'exp'], ['vehicle', 'Vehicle', '🚗', 'exp'], ['travel', 'Travel', '✈️', 'exp'],
-  ['gas', 'Gas', '🔥', 'exp'], ['electricity', 'Electricity', '💡', 'exp'], ['phone', 'Phone bill', '📱', 'exp'], ['dth', 'DTH', '📺', 'exp'],
-  ['wifi', 'WiFi / Broadband', '📶', 'exp'], ['rent', 'Rent / maintenance', '🏠', 'exp'], ['home', 'Home expense', '🏡', 'exp'],
-  ['kids', 'Kids / baby', '👶', 'exp'], ['entertainment', 'Entertainment', '🎬', 'exp'], ['subs', 'Subscriptions', '🔁', 'exp'],
-  ['insurance', 'Insurance', '🛡️', 'exp'], ['emi', 'EMI / loan', '🏦', 'exp'], ['invest', 'Investments / SIP', '📈', 'inv'],
-  ['trading', 'Trading & broker', '💹', 'inv'], ['tools', 'Trading tools', '🛠️', 'exp'], ['taxes', 'Taxes', '🧾', 'exp'],
-  ['cash', 'ATM cash', '💵', 'exp'], ['charges', 'Bank & card charges', '💳', 'exp'], ['gifts', 'Gifts & personal', '🎁', 'exp'], ['wallet', 'Wallet top-up', '👛', 'exp'], ['education', 'Education / courses', '🎓', 'exp'], ['parents', 'Sent to parents', '👪', 'exp'], ['other', 'Uncategorised', '❔', 'exp'],
-  // income
-  ['wages', 'Wages', '🚢', 'inc'], ['interest', 'Interest', '🏦', 'inc'], ['tradingpay', 'Trading payout', '💹', 'inc'],
-  ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc'], ['refund', 'Refund / cashback', '↩️', 'inc'], ['family', 'Received from family', '👪', 'inc'],
-  ['pension', 'Pension', '🧓', 'inc'], ['otherinc', 'Other income', '➕', 'inc'],
-  ['wife', 'ABB', '👩', 'exp'],
-  // transfers (excluded from spend/income)
-  ['self', 'Self-transfer', '🔄', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer'], ['tohusband', 'Sent to Ritesh', '👨', 'xfer'],
-  ['friend', 'Friends (lend/borrow)', '🤝', 'xfer'], ['fromson', 'Received from Ritesh', '👨', 'xfer'],
+// main groups (what charts, budgets and the dashboard show) → sub-categories (what each entry is tagged with)
+const GROUPS = [
+  ['home', 'Home Bills', '🏠', 'exp'], ['phonetv', 'Phone & TV', '📱', 'exp'], ['food', 'Food & Groceries', '🛒', 'exp'], ['travel', 'Travel & Vehicle', '🚗', 'exp'],
+  ['shop', 'Shopping', '🛍️', 'exp'], ['health', 'Health', '🏥', 'exp'], ['edu', 'Education', '🎓', 'exp'], ['fun', 'Subscriptions & Fun', '🎬', 'exp'],
+  ['family', 'Family', '👪', 'exp'], ['loans', 'Loans & Cards', '💳', 'exp'], ['ins', 'Insurance', '🛡️', 'exp'], ['tax', 'Charges & Taxes', '🏦', 'exp'], ['misc', 'Cash & Other', '💵', 'exp'],
+  ['invest', 'Investments', '📈', 'inv'], ['income', 'Income', '💰', 'inc'], ['xfer', 'Transfers', '🔄', 'xfer'],
 ];
-const CAT = Object.fromEntries(CATS.map(([id, name, icon, type]) => [id, { id, name, icon, type }]));
-const catName = id => id === 'wife' ? ((typeof S !== 'undefined' && S && S.settings && S.settings.wifeName) || 'ABB') : (CAT[id] || CAT.other).name;
-const catIcon = id => (CAT[id] || CAT.other).icon;
-const catType = id => (CAT[id] || CAT.other).type;
+const CATS = [
+  // 🏠 Home Bills
+  ['electricity', 'Electricity', '💡', 'exp', 'home'], ['water', 'Water', '🚰', 'exp', 'home'], ['gas', 'Piped gas', '🔥', 'exp', 'home'], ['lpg', 'LPG cylinder', '🛢️', 'exp', 'home'],
+  ['wifi', 'Broadband / WiFi', '📶', 'exp', 'home'], ['landline', 'Landline', '☎️', 'exp', 'home'], ['society', 'Society / maintenance', '🏢', 'exp', 'home'], ['rent', 'Rent', '🏠', 'exp', 'home'],
+  ['munitax', 'Municipal tax', '🏛️', 'exp', 'home'], ['home', 'Other home expense', '🏡', 'exp', 'home'],
+  // 📱 Phone & TV
+  ['phone', 'Mobile recharge', '📱', 'exp', 'phonetv'], ['postpaid', 'Mobile postpaid', '📲', 'exp', 'phonetv'], ['dth', 'DTH', '📡', 'exp', 'phonetv'], ['cabletv', 'Cable TV', '📺', 'exp', 'phonetv'],
+  ['roaming', 'International roaming / eSIM', '🌐', 'exp', 'phonetv'], ['appstore', 'App store (Google Play / Apple)', '📲', 'exp', 'phonetv'],
+  // 🛒 Food & Groceries
+  ['grocery', 'Groceries', '🛒', 'exp', 'food'], ['vegfruit', 'Vegetables & fruits', '🥦', 'exp', 'food'], ['milk', 'Milk & daily needs', '🥛', 'exp', 'food'],
+  ['food', 'Restaurants', '🍽️', 'exp', 'food'], ['delivery', 'Food delivery', '🛵', 'exp', 'food'],
+  // 🚗 Travel & Vehicle
+  ['fuel', 'Fuel', '⛽', 'exp', 'travel'], ['cab', 'Cab / Auto', '🚕', 'exp', 'travel'], ['bus', 'Bus / Train / Metro', '🚌', 'exp', 'travel'], ['ferry', 'Ferry', '⛴️', 'exp', 'travel'],
+  ['travel', 'Flights & ticket bookings', '✈️', 'exp', 'travel'], ['hotels', 'Hotels / Stay', '🏨', 'exp', 'travel'], ['fastag', 'FASTag', '🛣️', 'exp', 'travel'],
+  ['vehicle', 'Car service & repair', '🔧', 'exp', 'travel'], ['challan', 'Traffic challan', '🚦', 'exp', 'travel'],
+  // 🛍️ Shopping
+  ['shopping', 'Online shopping', '📦', 'exp', 'shop'], ['clothes', 'Clothes & shoes', '👕', 'exp', 'shop'], ['electronics', 'Electronics', '💻', 'exp', 'shop'],
+  ['homeitems', 'Home items', '🛋️', 'exp', 'shop'], ['kids', 'Kids / baby', '👶', 'exp', 'shop'],
+  // 🏥 Health
+  ['medical', 'Hospital / Doctor', '🏥', 'exp', 'health'], ['medicines', 'Medicines', '💊', 'exp', 'health'], ['tests', 'Lab tests', '🧪', 'exp', 'health'],
+  // 🎓 Education
+  ['education', 'Courses & training', '🎓', 'exp', 'edu'], ['books', 'Books', '📚', 'exp', 'edu'], ['fees', 'School / college fees', '🏫', 'exp', 'edu'],
+  // 🎬 Subscriptions & Fun
+  ['subs', 'OTT & subscriptions', '🔁', 'exp', 'fun'], ['tools', 'Apps & trading tools', '🛠️', 'exp', 'fun'], ['entertainment', 'Movies & outings', '🎬', 'exp', 'fun'],
+  // 👪 Family
+  ['wife', 'ABB', '👩', 'exp', 'family'], ['parents', 'Mom & Dad', '👪', 'exp', 'family'], ['gifts', 'Gifts', '🎁', 'exp', 'family'], ['donation', 'Donation / Devotion', '🙏', 'exp', 'family'],
+  // 💳 Loans & Cards
+  ['ccbill', 'Credit card bill', '💳', 'exp', 'loans'], ['emi', 'Loan EMI', '🏦', 'exp', 'loans'], ['carloan', 'Car loan', '🚘', 'exp', 'loans'],
+  // 🛡️ Insurance
+  ['insurance', 'Life / LIC', '🛡️', 'exp', 'ins'], ['term', 'Term plan', '📜', 'exp', 'ins'], ['healthins', 'Health insurance', '❤️', 'exp', 'ins'], ['vehins', 'Car / Bike insurance', '🚙', 'exp', 'ins'],
+  // 🏦 Charges & Taxes
+  ['charges', 'Bank & card charges', '💳', 'exp', 'tax'], ['taxes', 'Income tax / TDS', '🧾', 'exp', 'tax'], ['itr', 'ITR filing', '📑', 'exp', 'tax'],
+  // 💵 Cash & Other
+  ['cash', 'ATM cash', '💵', 'exp', 'misc'], ['wallet', 'Wallet top-up', '👛', 'exp', 'misc'], ['other', 'Uncategorised', '❔', 'exp', 'misc'],
+  // 📈 Investments (not counted as spending)
+  ['invest', 'SIP / Mutual funds', '📈', 'inv', 'invest'], ['trading', 'Stocks & trading', '💹', 'inv', 'invest'], ['nps', 'NPS', '🧓', 'inv', 'invest'], ['fd', 'FD / RD', '🏦', 'inv', 'invest'],
+  // 💰 Income
+  ['wages', 'Salary / Wages', '🚢', 'inc', 'income'], ['interest', 'Interest', '🏦', 'inc', 'income'], ['refund', 'Refund / cashback', '↩️', 'inc', 'income'], ['pension', 'Pension', '🧓', 'inc', 'income'],
+  ['tradingpay', 'Trading payout', '💹', 'inc', 'income'], ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc', 'income'], ['family', 'Received from family', '👪', 'inc', 'income'], ['otherinc', 'Other income', '➕', 'inc', 'income'],
+  // 🔄 Transfers (excluded from spend/income)
+  ['self', 'Self-transfer', '🔄', 'xfer', 'xfer'], ['friend', 'Friends (lend/borrow)', '🤝', 'xfer', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer', 'xfer'],
+  ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Received from Ritesh', '👨', 'xfer', 'xfer'],
+];
+const CAT = Object.fromEntries(CATS.map(([id, name, icon, type, group]) => [id, { id, name, icon, type, group }]));
+const GRP = Object.fromEntries(GROUPS.map(([id, name, icon, type]) => [id, { id, name, icon, type }]));
+// a category key is either a sub-category id ("grocery") or a whole group ("g:food")
+const isG = id => typeof id === 'string' && id.startsWith('g:');
+const catGroup = id => isG(id) ? id.slice(2) : ((CAT[id] || CAT.other).group || 'misc');
+const groupName = g => (GRP[g] || GRP.misc).name, groupIcon = g => (GRP[g] || GRP.misc).icon;
+const catName = id => isG(id) ? groupName(id.slice(2)) : id === 'wife' ? ((typeof S !== 'undefined' && S && S.settings && S.settings.wifeName) || 'ABB') : (CAT[id] || CAT.other).name;
+const catIcon = id => isG(id) ? groupIcon(id.slice(2)) : (CAT[id] || CAT.other).icon;
+const catType = id => isG(id) ? (GRP[id.slice(2)] || GRP.misc).type : (CAT[id] || CAT.other).type;
+const catIn = (t, key) => !key || (isG(key) ? catGroup(t.cat) === key.slice(2) : t.cat === key);
 const CAT_COLORS = ['#22d3ee', '#a3e635', '#f472b6', '#fbbf24', '#a78bfa', '#fb923c', '#4ade80', '#60a5fa', '#f87171', '#2dd4bf', '#e879f9', '#facc15', '#38bdf8', '#c084fc'];
 const UPI_APPS = ['PhonePe', 'GPay', 'Paytm', 'Amazon Pay', 'BHIM', 'Merchant / autopay', 'Other app'];
 const APP_COLOR = { PhonePe: '#a78bfa', GPay: '#60a5fa', Paytm: '#22d3ee', 'Amazon Pay': '#fbbf24', BHIM: '#fb923c', 'Merchant / autopay': '#2dd4bf', 'Other app': '#94a3b8', Unknown: '#64748b' };
@@ -936,36 +979,67 @@ const PAY_MODES = ['UPI', 'Auto-debit', 'Card', 'Net banking', 'Cash', 'NEFT/IMP
 /* ---------- built-in categorisation rules (matched on compact upper-case narration) ---------- */
 const RULES_DR = [
   ['charges', /^CHRG|DCCFEE|ECSRETURN|SMSCHARGE|SMSCHRG|ANNUALFEE|ANNUALCHARGES|ATMANN|DEBITCARDFEE|MINBAL|IMPS-CHG/],
-  ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|^MUTUALFUND$|CAMS|KFINTECH|NJINDIA|FDBOOKED|FIXEDDEPOSIT/],
+  ['nps', /NPSTRUST|PFRDA|PROTEANCRA|NSDLNPS|^NPS|\/NPS/],
+  ['fd', /FDBOOKED|FIXEDDEPOSIT|RDINSTAL|RECURRINGDEP|^RD\//],
+  ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|^MUTUALFUND$|CAMS|KFINTECH|NJINDIA/],
   ['trading', /ZERODHA|DELTAEXCHANGE|UPSTOX|ANGELONE|ANGELBROKING|GROWW|DHAN|FLATTRADE|5PAISA/],
   ['tools', /TRADETRON|ALGOTEST|TICKERTAPE|NEUTRINO|SENSIBULL|STREAK|TRADINGVIEW|OPSTRA|QUANTSAPP|STOCKMOCK/],
-  ['taxes', /ETAX|INCOMETAX|CLEARTAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT|^WTAX/],
+  ['itr', /CLEARTAX|TAX2WIN|ITRFILING|QUICKO/],
+  ['taxes', /ETAX|INCOMETAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT|^WTAX/],
   ['wallet', /ADD-MONEY@P|^OSPAYTM|PAYTMWALLET|ADDMONEY|^ECOM\d*PAYTM$|ONE97COMMUNICATION/],
+  ['fees', /SCHOOLFEE|COLLEGEFEE|TUITION|\/FEES|FEESPAY/],
+  ['books', /BOOKSTORE|BOOKS\b|KINDLE|CROSSWORD|BOOKSELLER/],
   ['education', /ACADEMY|INSTITUTE|COLLEGE|UNIVERSITY|\/SCHOOL|COURSE|UDEMY|COURSERA|DGSHIPPING|MARITIMETRAIN/],
-  ['insurance', /INSURANC|CAREHEALTH|POLICYBAZAAR|MAXLIFE|LICOFINDIA|HDFCLIFE|ICICIPRU|STARHEALTH|NIVABUPA|ACKO|GODIGIT/],
-  ['emi', /\bEMI|EMI\b|LOANREPAY|LOANRECOVERY|LOANAC|BAJAJFIN|HOMELOAN|CARLOAN|AUTOLOAN|VEHICLELOAN|LNREC|LOANINST/],
+  ['healthins', /CAREHEALTH|STARHEALTH|NIVABUPA|MAXBUPA|HEALTHINS|ADITYABIRLAHEALTH/],
+  ['vehins', /ACKO|GODIGIT|MOTORINS|CARINSUR|BIKEINSUR|TWOWHEELERINS/],
+  ['term', /TERMPLAN|TERMINSUR|IPROTECT|CLICK2PROTECT/],
+  ['insurance', /INSURANC|POLICYBAZAAR|MAXLIFE|LICOFINDIA|LIC\b|HDFCLIFE|ICICIPRU/],
+  ['ccbill', /CREDITCARD|CCPAY|CARDBILL|CREDCLUB|SBICARD|CARDSPAYMENT|CCBILL/],
+  ['carloan', /CARLOAN|AUTOLOAN|VEHICLELOAN/],
+  ['emi', /\bEMI|EMI\b|LOANREPAY|LOANRECOVERY|LOANAC|BAJAJFIN|HOMELOAN|LNREC|LOANINST/],
   ['cash', /^ATL\/|^ATW\/|ATMWDL|CASHWDL|CASHWITHDRAWAL|^ATM/],
   ['home', /^MB:HOMEEXPENSE|HOMEEXPE$/],
-  ['rent', /HOMERENT|\/RENT|RENTPAY|MAINTENANCE|SOCIETY|NOBROKER/],
-  ['gas', /MAHANAGARGAS|MGL|INDANE|HPGAS|BHARATGAS|ADANIGAS|ADANITOTALGAS|GUJARATGAS|INDRAPRASTHAGAS|CYLINDER/],
+  ['society', /MAINTENANCE|SOCIETY|MYGATE|NOBROKERHOOD|APARTMENT/],
+  ['munitax', /MUNICIPAL|PROPERTYTAX|NMMC|MCGM|PANVELMUNI/],
+  ['rent', /HOMERENT|\/RENT|RENTPAY|NOBROKER/],
+  ['lpg', /INDANE|HPGAS|BHARATGAS|CYLINDER|LPG/],
+  ['gas', /MAHANAGARGAS|MGL|ADANIGAS|ADANITOTALGAS|GUJARATGAS|INDRAPRASTHAGAS|PIPEDGAS/],
   ['electricity', /MSEDCL|MAHAVITARAN|ADANIELECTRICITY|TATAPOWER|BESTUNDERTAKING|TORRENTPOWER|ELECTRICITY|BSES|MSEB|UPPCL|UPCL/],
+  ['water', /WATERBILL|WATERTAX|JALBOARD|MJP|JALNIGAM|WATERSUPPLY/],
+  ['landline', /LANDLINE|MTNL/],
+  ['cabletv', /CABLETV|GTPL|DENNETWORK|HATHWAYDIGITAL/],
   ['dth', /TATAPLAY|TATASKY|DISHTV|SUNDIRECT|AIRTELDTH|VIDEOCOND2H|D2H/],
   ['wifi', /JIOFIBER|AIRTELXSTREAM|AIRTELBROADBAND|ACTFIBERNET|HATHWAY|BROADBAND|FIBERNET|EXCITEL|TIKONA/],
-  ['subs', /NETFLIX|HOTSTAR|PRIMEVIDEO|AMAZONPRIME|PRIMERE|APPLEMEDIA|APPLE\.COM|SPOTIFY|YOUTUBEPREMIUM|GOOGLEPLAY|ZEE5|SONYLIV|JIOCINEMA|CHATGPT|OPENAI|ANTHROPIC|CLAUDE/],
+  ['appstore', /GOOGLEPLAY|APPLE\.COM|APPLEMEDIA|ITUNES|APPSTORE/],
+  ['roaming', /ROAMING|AIRALO|MOBIMATTER|HOLAFLY|ESIM/],
+  ['subs', /NETFLIX|HOTSTAR|PRIMEVIDEO|AMAZONPRIME|PRIMERE|SPOTIFY|YOUTUBEPREMIUM|ZEE5|SONYLIV|JIOCINEMA|CHATGPT|OPENAI|ANTHROPIC|CLAUDE/],
+  ['postpaid', /POSTPAID/],
   ['phone', /VODAFONE|VODAFONEIDEA|AIRTEL|RELIANCEJIO|\/JIO|BSNL|PREPAIDRECH|MOBILERECHARGE|VILPREPAID|^PGVOD/],
   ['entertainment', /BOOKMYSHOW|PVR|INOX|CINEPOLIS|DISTRICT/],
-  ['travel', /AIRBNB|BIKE\w*RENT|SPICEJET|INDIGO|AIRINDIA|AKASA|VISTARA|IRCTC|MAKEMYTRIP|GOIBIBO|CLEARTRIP|IXIGO|TRAVELSEES|YATRA|EASEMYTRIP|AGODA|BOOKING\.COM|OYO|MOBIMATTER|AIRALO/],
+  ['hotels', /AIRBNB|OYO|AGODA|BOOKING\.COM|TREEBO|FABHOTEL|ZOSTEL|GOSTOPS|HOTELBOOK/],
+  ['challan', /CHALLAN|TRAFFICPOLICE|PARIVAHAN/],
+  ['fastag', /FASTAG|NETC/],
+  ['travel', /BIKE\w*RENT|SPICEJET|INDIGO|AIRINDIA|AKASA|VISTARA|IRCTC|MAKEMYTRIP|GOIBIBO|CLEARTRIP|IXIGO|TRAVELSEES|YATRA|EASEMYTRIP/],
   ['cab', /UBER|\/OLA|OLACABS|RAPIDO|BLUSMART|\/CAB|CABTO|TAXI/],
   ['bus', /REDBUS|MSRTC|ABHIBUS|\/BUS|BUSTICKET|BEST\/|NMMT/],
   ['ferry', /FERRY|JETTY|MANDWA|M2MFERR|PNPMARITIME|LAUNCH/],
   ['fuel', /PETROL|FUEL|HPCL|BPCL|IOCL|INDIANOIL|SERVICESTA|FILLINGSTATION|PETROLEUM|NAYARA|SHELL/],
-  ['vehicle', /MOTOR|CARWASH|WASHMYCAR|DASHCAM|CARKEY|ECOSPORT|FORD|TYRE|AUTOMOBILE|FASTAG|GARAGE|CARACCESS|CARSPA/],
+  ['vehicle', /MOTOR|CARWASH|WASHMYCAR|DASHCAM|CARKEY|ECOSPORT|FORD|TYRE|AUTOMOBILE|GARAGE|CARACCESS|CARSPA/],
   ['kids', /FIRSTCRY|BABY|HOPSCOTCH|TOYS|CRADDL|CRADLE|KIDS/],
-  ['medical', /SHUSHRUSHA|HEARTCARE|MED\/|CHEMIS|PHARMA|MEDICO|MEDICAL|MEDICINE|APOLLO|HOSPITAL|CLINIC|1MG|PHARMEASY|NETMEDS|DIAGNOSTIC|PATHLAB|MOTHERHOOD|DENTAL|DOCTOR|HEALTHCARE/],
-  ['grocery', /FUTURERETAIL|BIGBAZAAR|DMART|DMARTAVENUE|BIGBASKET|BLINKIT|ZEPTO|INSTAMART|SUPERMAR|KIRANA|GENERALSTORE|DAIRY|FRUITS|VEGETABLE|MILK|RELIANCEFRESH|RELIANCESMART|PROVISION|GROC|JIOMART|STARBAZAAR/],
-  ['food', /SWIGGY|ZOMATO|FOOD|RESTAURANT|HOTEL|CAFE|MOMO|SWEET|JUICE|BAKERY|PIZZA|DOMINOS|KFC|MCDONALD|BURGER|CHINESE|MISHTH|MITHAI|DHABA|BIRYANI|CHAI|TASTIA|KITCHEN|BIKANER/],
-  ['shopping', /NAKAMOBILE|AMAZON|FLIPKART|MYNTRA|AJIO|MEESHO|ZUDIO|MAXRETAIL|BATA|LIMELIGHT|CLOTHES|HANDLOOM|INORBIT|MALL|JEWELL|TRENDS|PANTALOONS|LIFESTYLE|DECATHLON|NYKAA|STATIONAR|FURNITURE|CROMA|RELIANCEDIGITAL|DIGIWORLD|DIGIWORLD/],
+  ['tests', /DIAGNOSTIC|PATHLAB|THYROCARE|LALPATH|METROPOLIS|PATHOLOGY/],
+  ['medicines', /MED\/|CHEMIS|PHARMA|MEDICO|MEDICINE|1MG|PHARMEASY|NETMEDS|MEDPLUS|DRUG/],
+  ['medical', /SHUSHRUSHA|HEARTCARE|MEDICAL|APOLLO|HOSPITAL|CLINIC|MOTHERHOOD|DENTAL|DOCTOR|HEALTHCARE/],
+  ['milk', /MILK|DAIRY|AMUL|GOKUL|MOTHERDAIRY/],
+  ['vegfruit', /FRUIT|VEGETABLE|SABZI|SABJI/],
+  ['grocery', /FUTURERETAIL|BIGBAZAAR|DMART|DMARTAVENUE|BIGBASKET|BLINKIT|ZEPTO|INSTAMART|SUPERMAR|KIRANA|GENERALSTORE|RELIANCEFRESH|RELIANCESMART|PROVISION|GROC|JIOMART|STARBAZAAR/],
+  ['delivery', /SWIGGY|ZOMATO|EATSURE/],
+  ['food', /FOOD|RESTAURANT|HOTEL|CAFE|MOMO|SWEET|JUICE|BAKERY|PIZZA|DOMINOS|KFC|MCDONALD|BURGER|CHINESE|MISHTH|MITHAI|DHABA|BIRYANI|CHAI|TASTIA|KITCHEN|BIKANER/],
+  ['clothes', /MYNTRA|AJIO|ZUDIO|MAXRETAIL|BATA|CLOTHES|HANDLOOM|TRENDS|PANTALOONS|LIFESTYLE|WESTSIDE|BOOTHOUSE|SHOE|FOOTWEAR|GARMENT|FASHION/],
+  ['electronics', /CROMA|RELIANCEDIGITAL|DIGIWORLD|VIJAYSALES|NAKAMOBILE|MOBILESHOP|ELECTRONIC/],
+  ['homeitems', /FURNITURE|IKEA|PEPPERFRY|HOMECENTRE|HOMESTOP|UTENSIL|HARDWARE/],
+  ['shopping', /AMAZON|FLIPKART|MYNTRA|AJIO|MEESHO|ZUDIO|MAXRETAIL|BATA|LIMELIGHT|CLOTHES|HANDLOOM|INORBIT|MALL|JEWELL|TRENDS|PANTALOONS|LIFESTYLE|DECATHLON|NYKAA|STATIONAR|FURNITURE|CROMA|RELIANCEDIGITAL|DIGIWORLD|DIGIWORLD/],
   ['gifts', /GIFT/],
+  ['donation', /TEMPLE|MANDIR|DONATION|GURUDWARA|CHARITY|DEVASTHAN|SANSTHAN/],
 ];
 const RULES_CR = [
   ['pension', /PENSION|PENSN|PENS\.|SPARSH|CPAO|PPOPEN|PENCR|\/PEN\//],
@@ -1081,6 +1155,16 @@ async function unlockVault(pin) {
 }
 function migrate() { const d = seedState(); S.settings = Object.assign(d.settings, S.settings); S.settings.sync = Object.assign({ url: '', key: '', lastAt: null }, S.settings.sync); PROFS.forEach(k => { const fresh = !S.profiles[k]; S.profiles[k] = Object.assign(EMPTY_PROFILE(d.profiles[k].name), S.profiles[k] || d.profiles[k]); if (fresh) S.profiles[k].updatedAt = nowIso(); });
   try { dedupeSeeds(); } catch (e) { console.warn(e); }
+  if (!S.settings.catsV2) { S.settings.catsV2 = 1;
+    // budgets now belong to main categories: merge sub-category budgets into their group
+    PROFS.forEach(k => { const bs = live(S.profiles[k].budgets || []), byG = {};
+      bs.forEach(b => { if (isG(b.cat)) return; const g = 'g:' + catGroup(b.cat); (byG[g] = byG[g] || []).push(b); });
+      Object.entries(byG).forEach(([g, list]) => { const ex = bs.find(b => b.cat === g); const keep = ex || list[0]; const sum = (ex ? ex.amount : 0) + list.filter(b => b !== keep).reduce((s, b) => s + b.amount, 0) + (ex ? 0 : keep.amount);
+        keep.cat = g; keep.amount = Math.round(sum); touch(keep); list.filter(b => b !== keep).forEach(b => { b.deleted = true; touch(b); }); }); });
+    // entries the app categorised itself → re-check against the new, more precise sub-categories (same main category only)
+    PROFS.forEach(k => live(S.profiles[k].txns || []).forEach(t => { if (t.reviewed || t.userSet || t.source !== 'import') return;
+      const c = classify(t, k).cat; if (c && c !== t.cat && (catGroup(c) === catGroup(t.cat) || t.cat === 'other' || t.cat === 'otherinc')) { t.cat = c; touch(t); } }));
+  }
   if (!S.settings.momDadV) { S.settings.momDadV = 1; const pr = S.profiles.parents;
     (pr.accounts || []).forEach(a => { if (/^papa\b/i.test(a.name || '')) { a.name = a.name.replace(/^papa/i, 'Dad'); touch(a); } });
     (pr.members || []).forEach(m => { if (/^papa$/i.test(m.name || '')) { m.name = 'Dad'; touch(m); } else if (/^mummy$/i.test(m.name || '')) { m.name = 'Mom'; touch(m); } });
@@ -1514,9 +1598,9 @@ function totals(arr) {
   arr.forEach(t => { const ty = catType(t.cat); if (ty === 'exp') exp += t.dir === 'dr' ? t.amount : -t.amount; else if (ty === 'inc') inc += t.dir === 'cr' ? t.amount : -t.amount; else if (ty === 'inv') inv += t.dir === 'dr' ? t.amount : -t.amount; });
   return { inc, exp, inv, net: inc - exp, rate: inc > 0 ? (inc - exp) / inc : null };
 }
-function catItems(arr) {
-  const m = {}; arr.filter(t => catType(t.cat) === 'exp').forEach(t => { m[t.cat] = (m[t.cat] || 0) + (t.dir === 'dr' ? t.amount : -t.amount); });
-  return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([c, v], i) => ({ label: catIcon(c) + ' ' + catName(c), value: v, color: CAT_COLORS[i % CAT_COLORS.length], cat: c }));
+function catItems(arr) {   // spending by MAIN category (tap → its sub-categories)
+  const m = {}; arr.filter(t => catType(t.cat) === 'exp').forEach(t => { const g = catGroup(t.cat); m[g] = (m[g] || 0) + (t.dir === 'dr' ? t.amount : -t.amount); });
+  return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([g, v]) => ({ label: groupIcon(g) + ' ' + groupName(g), value: v, color: (typeof GCOLORS !== 'undefined' && GCOLORS[g]) || '#94a3b8', cat: 'g:' + g }));
 }
 function monthRange(k) { const [y, m] = k.split('-').map(Number); return [k + '-01', toISO(new Date(y, m, 0))]; }
 function lastMonths(endKey, n) { const [y, m] = endKey.split('-').map(Number); const out = []; for (let i = n - 1; i >= 0; i--) { const d = new Date(y, m - 1 - i, 1); out.push(d.getFullYear() + '-' + pad2(d.getMonth() + 1)); } return out; }
@@ -1730,7 +1814,7 @@ function txnsPanel(profKey) {
   if (F.from) arr = arr.filter(t => t.date >= F.from && t.date <= F.to);
   if (F.forWho) arr = arr.filter(t => t.for === F.forWho || (F.forWho === 'parents' && t.cat === 'parents'));
   if (F.acc) arr = arr.filter(t => t.account === F.acc);
-  if (F.cat) arr = arr.filter(t => t.cat === F.cat);
+  if (F.cat) arr = arr.filter(t => catIn(t, F.cat));
   if (F.app) arr = arr.filter(t => F.app === 'none' ? (t.mode === 'UPI' && t.dir === 'dr' && !t.app) : t.app === F.app);
   if (F.ty) arr = arr.filter(t => F.ty === 'exp' ? catType(t.cat) === 'exp' : F.ty === 'inc' ? catType(t.cat) === 'inc' : catType(t.cat) === 'xfer');
   if (F.q) { const q = F.q.toLowerCase(); arr = arr.filter(t => (t.desc + ' ' + (t.note || '') + ' ' + t.amount).toLowerCase().includes(q)); }
@@ -2560,14 +2644,16 @@ markPaid = function (...a) { _markPaid(...a); setTimeout(celebrate, 60); };
 /* ---------- helpers ---------- */
 function prevMonth(k) { const [y, m] = k.split('-').map(Number); const d = new Date(y, m - 2, 1); return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
 function catTotals(profs, from, to) { const m = {}; profs.flatMap(p => txIn(p, from, to)).forEach(t => { if (catType(t.cat) !== 'exp') return; m[t.cat] = (m[t.cat] || 0) + (t.dir === 'dr' ? t.amount : -t.amount); }); return m; }
+function gTotals(profs, from, to) { const m = {}; Object.entries(catTotals(profs, from, to)).forEach(([c, v]) => { const k = 'g:' + catGroup(c); m[k] = (m[k] || 0) + v; }); return m; }
 function dailyCum(prof, k, stopDay) {
   const [from, to] = monthRange(k), days = +to.slice(8), byDay = new Array(days).fill(0);
   txIn(prof, from, to).forEach(t => { if (catType(t.cat) === 'exp') byDay[+t.date.slice(8) - 1] += t.dir === 'dr' ? t.amount : -t.amount; });
   let acc = 0; return byDay.map((v, i) => { acc += v; return stopDay && i + 1 > stopDay ? null : acc; });
 }
+const spentOf = (ct, key) => isG(key) ? Object.entries(ct).filter(([c]) => catGroup(c) === key.slice(2)).reduce((s, [, v]) => s + v, 0) : (ct[key] || 0);
 function budgetStatus(prof, k) {
   const [f, t] = monthRange(k), ct = catTotals([prof], f, t);
-  return live(P(prof).budgets || []).filter(b => b.amount > 0).map(b => { const spent = Math.max(0, ct[b.cat] || 0); return { b, spent, pct: spent / b.amount }; }).sort((a, b) => b.pct - a.pct);
+  return live(P(prof).budgets || []).filter(b => b.amount > 0).map(b => { const spent = Math.max(0, spentOf(ct, b.cat)); return { b, spent, pct: spent / b.amount }; }).sort((a, b) => b.pct - a.pct);
 }
 const pctColor = p => p >= 1 ? '#ff6b8b' : p >= .8 ? '#fbbf24' : '#34e89e';
 function insights(prof, k) {
@@ -2719,8 +2805,8 @@ VIEWS.plan = () => {
 };
 function budgetModal(id) {
   const b = id ? P('me').budgets.find(x => x.id === id) : null;
-  const avg = cat => { const ms = monthsWithData(['me']).slice(0, 3); return ms.length ? ms.reduce((s, k) => s + Math.max(0, catTotals(['me'], ...monthRange(k))[cat] || 0), 0) / ms.length : 0; };
-  modal(b ? 'Edit budget' : 'Add budget', `<div class="frow"><div class="fld"><label>Category</label><select class="inp" id="bu_c">${catOptions(b ? b.cat : 'food', ['exp'])}</select></div><div class="fld"><label>Monthly limit (₹)</label><input class="inp" id="bu_a" type="number" min="0" inputmode="decimal" value="${b ? b.amount : ''}"></div></div><div class="small muted" id="bu_h"></div>`,
+  const avg = cat => { const ms = monthsWithData(['me']).slice(0, 3); return ms.length ? ms.reduce((s, k) => s + Math.max(0, spentOf(catTotals(['me'], ...monthRange(k)), cat)), 0) / ms.length : 0; };
+  modal(b ? 'Edit budget' : 'Add budget', `<div class="frow"><div class="fld"><label>Category</label><select class="inp" id="bu_c"><optgroup label="Main categories">${groupOptions(b ? b.cat : 'g:food')}</optgroup>${b && !isG(b.cat) ? `<optgroup label="Sub-category"><option value="${b.cat}" selected>${catIcon(b.cat)} ${esc(catName(b.cat))}</option></optgroup>` : ''}</select></div><div class="fld"><label>Monthly limit (₹)</label><input class="inp" id="bu_a" type="number" min="0" inputmode="decimal" value="${b ? b.amount : ''}"></div></div><div class="small muted" id="bu_h"></div>`,
     `${b ? '<button class="btn dan" id="bu_d">Delete</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="bu_s">Save</button>`, {
     onMount: m => {
       const hint = () => { const a = avg($('#bu_c', m).value); $('#bu_h', m).textContent = a ? 'Your recent monthly average for this category: ' + rs(a) : ''; }; hint(); $('#bu_c', m).onchange = hint;
@@ -2752,9 +2838,9 @@ function goalAddModal(id) {
 }
 function suggestBudgets() {
   const have = new Set(monthsWithData(['me'])), ms = monthsWithData(['me']).filter(k => k < ym(today()) || have.size <= 1).slice(0, 3), sums = {};
-  ms.forEach(k => Object.entries(catTotals(['me'], ...monthRange(k))).forEach(([c, v]) => { if (v > 0) sums[c] = (sums[c] || 0) + v; }));
+  ms.forEach(k => Object.entries(catTotals(['me'], ...monthRange(k))).forEach(([c, v]) => { const g = 'g:' + catGroup(c); sums[g] = (sums[g] || 0) + v; }));
   const nM = Math.max(1, ms.length);
-  const skip = ['taxes', 'insurance', 'other', 'cash'];
+  const skip = ['g:tax', 'g:ins', 'g:misc', 'g:loans', 'g:family'];
   const list = Object.entries(sums).map(([c, v]) => [c, Math.ceil(v / nM / 500) * 500]).filter(([c, v]) => v >= 500 && !skip.includes(c)).sort((a, b) => b[1] - a[1]).slice(0, 8);
   if (!list.length) { toast('Import a few months of statements first'); return; }
   modal('✨ Suggested budgets', `<p class="muted" style="margin-top:0">Based on your average monthly spending in your last ${ms.length} month${ms.length === 1 ? '' : 's'} of statements (${ms.map(ymLabel).join(', ')}), rounded up. Untick any you don't want; you can edit amounts later.</p><div class="checklist">${list.map(([c, v]) => `<label><input type="checkbox" checked data-sb="${c}" data-v="${v}"><span style="flex:1">${catIcon(c)} ${esc(catName(c))}</span><b class="num">${rs(v)}</b></label>`).join('')}</div>`,
@@ -2860,10 +2946,10 @@ VIEWS.reports = () => {
   if (rt === 'trends') {
     const ser = l12.map(k => totals(profs.flatMap(p => txIn(p, ...monthRange(k))).filter(t => who !== 'house' || !hhSkip(t))));
     const prevYr = l12.map(k => { const [y, m] = k.split('-'); return totals(profs.flatMap(p => txIn(p, ...monthRange((+y - 1) + '-' + m))).filter(t => who !== 'house' || !hhSkip(t))).exp; });
-    const catT = {}; l12.forEach(k => Object.entries(catTotals(profs, ...monthRange(k))).forEach(([c, v]) => { if (v > 0) catT[c] = (catT[c] || 0) + v; }));
+    const catT = {}; l12.forEach(k => Object.entries(gTotals(profs, ...monthRange(k))).forEach(([c, v]) => { if (v > 0) catT[c] = (catT[c] || 0) + v; }));
     const top = Object.entries(catT).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
-    const stacks = top.map((c, i) => ({ name: catName(c), color: CAT_COLORS[i], cat: c, values: l12.map(k => Math.max(0, catTotals(profs, ...monthRange(k))[c] || 0)) }));
-    stacks.push({ name: 'Other', color: '#64748b', values: l12.map(k => Object.entries(catTotals(profs, ...monthRange(k))).filter(([c]) => !top.includes(c)).reduce((s, [, v]) => s + Math.max(0, v), 0)) });
+    const stacks = top.map((c, i) => ({ name: catName(c), color: GCOL(c), cat: c, values: l12.map(k => Math.max(0, gTotals(profs, ...monthRange(k))[c] || 0)) }));
+    stacks.push({ name: 'Other', color: '#64748b', values: l12.map(k => Object.entries(gTotals(profs, ...monthRange(k))).filter(([c]) => !top.includes(c)).reduce((s, [, v]) => s + Math.max(0, v), 0)) });
     const accs = profs.flatMap(p => P(p).accounts.filter(a => !a.deleted && live(P(p).txns).some(t => t.account === a.id && t.balance != null)).map(a => ({ a, p })));
     const bal = accs.map(({ a, p }, i) => ({ name: a.name, color: a.type === 'NRE' ? '#fbbf24' : a.type === 'NRO' ? '#38e1ff' : CAT_COLORS[(i + 3) % CAT_COLORS.length], area: i === 0, values: l12.map(k => balanceAt(p, a.id, monthRange(k)[1])) }));
     const util = ['electricity', 'gas', 'phone', 'dth', 'wifi'];
@@ -2876,7 +2962,7 @@ VIEWS.reports = () => {
   }
   if (rt === 'flow') {
     const incCats = {}, expCats = {};
-    tx.forEach(t => { const ty = catType(t.cat); if (ty === 'inc') incCats[t.cat] = (incCats[t.cat] || 0) + (t.dir === 'cr' ? t.amount : -t.amount); if (ty === 'exp') expCats[t.cat] = (expCats[t.cat] || 0) + (t.dir === 'dr' ? t.amount : -t.amount); });
+    tx.forEach(t => { const ty = catType(t.cat); if (ty === 'inc') incCats[t.cat] = (incCats[t.cat] || 0) + (t.dir === 'cr' ? t.amount : -t.amount); if (ty === 'exp') { const gk = 'g:' + catGroup(t.cat); expCats[gk] = (expCats[gk] || 0) + (t.dir === 'dr' ? t.amount : -t.amount); } });
     const left = Object.entries(incCats).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([c, v], i) => ({ label: catIcon(c) + ' ' + catName(c), value: v, color: ['#34e89e', '#38e1ff', '#6ea8ff', '#2dd4bf', '#a3e635', '#b18cff', '#fbbf24'][i % 7] }));
     const out = T.exp + Math.max(0, T.inv);
     if (out > T.inc) left.push({ label: '🐷 From savings', value: out - T.inc, color: '#94a3b8' });
@@ -3636,7 +3722,7 @@ const V3ACT = {}, V3CHANGE = {};
 
 /* ---------- small helpers ---------- */
 const hashN = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
-function catColor(c) { const o = (CAT[c] || {}).color; return o || CAT_COLORS[hashN(c) % CAT_COLORS.length]; }
+function catColor(c) { const o = (CAT[c] || {}).color; return o || GCOL(c); }
 function icoTile(icon, color, cls = '') { return `<span class="itile ${cls}" style="--ic:${color}">${icon}</span>`; }
 function spark(vals, color) {
   const v = vals.map(x => x || 0); if (v.length < 2 || !v.some(Boolean)) return '';
@@ -3664,25 +3750,31 @@ function txTag(t) {
   return m ? `<span class="tag" style="--tg:${col[k] || '#94a3b8'}">${esc(k || m.slice(0, 10))}</span>` : '';
 }
 
+const GCOLORS = { home: '#3b82f6', phonetv: '#06b6d4', food: '#22c55e', travel: '#f59e0b', shop: '#ec4899', health: '#ef4444', edu: '#8b5cf6', fun: '#a855f7', family: '#f97316', loans: '#64748b', ins: '#14b8a6', tax: '#78716c', misc: '#94a3b8', invest: '#10b981', income: '#16a34a', xfer: '#0ea5e9' };
+const GCOL = key => GCOLORS[catGroup(key)] || '#94a3b8';
+function groupTotals(ct) { const m = {}; Object.entries(ct).forEach(([c, v]) => { const g = catGroup(c); m[g] = (m[g] || 0) + v; }); return m; }
 /* ---------- custom categories (synced as collection "cats" in Ritesh's profile) ---------- */
 const BASE_CATS = CATS.map(c => c.slice());
 let HIDDEN_CATS = new Set();
 function applyCats() {
   if (!S || !S.profiles || !S.profiles.me) return;
   const recs = live(P('me').cats || []), ov = {}; recs.forEach(r => ov[r.key] = r);
-  const all = BASE_CATS.map((c, i) => { const o = ov[c[0]]; return { key: c[0], name: (o && o.name) || c[1], icon: (o && o.icon) || c[2], type: c[3], color: o && o.color, order: o && o.order != null ? o.order : i * 10, hidden: !!(o && o.hidden) }; });
-  recs.filter(r => r.custom).forEach((r, i) => all.push({ key: r.key, name: r.name, icon: r.icon || '🏷️', type: r.type || 'exp', color: r.color, order: r.order != null ? r.order : 5000 + i, hidden: !!r.hidden }));
+  const all = BASE_CATS.map((c, i) => { const o = ov[c[0]]; return { key: c[0], name: (o && o.name) || c[1], icon: (o && o.icon) || c[2], type: c[3], group: c[4], color: o && o.color, order: o && o.order != null ? o.order : GROUPS.findIndex(x => x[0] === c[4]) * 1000 + i, hidden: !!(o && o.hidden) }; });
+  recs.filter(r => r.custom).forEach((r, i) => { const ty = r.type || 'exp'; all.push({ key: r.key, name: r.name, icon: r.icon || '🏷️', type: ty, group: r.group && GRP[r.group] ? r.group : ({ exp: 'misc', inc: 'income', inv: 'invest', xfer: 'xfer' }[ty]), color: r.color, order: r.order != null ? r.order : 5000 + i, hidden: !!r.hidden }); });
   all.sort((a, b) => a.order - b.order);
   HIDDEN_CATS = new Set(all.filter(c => c.hidden).map(c => c.key));
-  CATS.length = 0; all.forEach(c => CATS.push([c.key, c.name, c.icon, c.type]));
+  CATS.length = 0; all.forEach(c => CATS.push([c.key, c.name, c.icon, c.type, c.group]));
   Object.keys(CAT).forEach(k => delete CAT[k]);
-  all.forEach(c => CAT[c.key] = { id: c.key, name: c.name, icon: c.icon, type: c.type, color: c.color });
+  all.forEach(c => CAT[c.key] = { id: c.key, name: c.name, icon: c.icon, type: c.type, group: c.group, color: c.color });
 }
 catOptions = function (sel, types = ['exp', 'inv', 'inc', 'xfer']) {
-  const lab = { exp: 'Expenses', inv: 'Investments (not counted as spending)', inc: 'Income', xfer: 'Transfers (not counted)' };
-  return types.map(ty => `<optgroup label="${lab[ty]}">` + CATS.filter(c => c[3] === ty && (!HIDDEN_CATS.has(c[0]) || c[0] === sel)).map(c => `<option value="${c[0]}" ${c[0] === sel ? 'selected' : ''}>${c[2]} ${esc(catName(c[0]))}</option>`).join('') + '</optgroup>').join('')
-    + (types.includes('exp') ? '' : `<optgroup label="${esc(wifeName())}"><option value="wife" ${sel === 'wife' ? 'selected' : ''}>👩 Received from ${esc(wifeName())} (reduces ${esc(wifeName())} expense)</option></optgroup>`);
+  return GROUPS.filter(g => types.includes(g[3])).map(([g, gn, gi]) => {
+    const subs = CATS.filter(c => c[4] === g && (!HIDDEN_CATS.has(c[0]) || c[0] === sel));
+    return subs.length ? `<optgroup label="${gi} ${esc(gn)}">` + subs.map(c => `<option value="${c[0]}" ${c[0] === sel ? 'selected' : ''}>${c[2]} ${esc(catName(c[0]))}</option>`).join('') + '</optgroup>' : '';
+  }).join('') + (types.includes('exp') ? '' : `<optgroup label="${esc(wifeName())}"><option value="wife" ${sel === 'wife' ? 'selected' : ''}>👩 Received from ${esc(wifeName())} (reduces ${esc(wifeName())} expense)</option></optgroup>`);
 };
+// main categories only (budgets, filters)
+const groupOptions = (sel, types = ['exp']) => GROUPS.filter(g => types.includes(g[3])).map(([g, gn, gi]) => `<option value="g:${g}" ${sel === 'g:' + g ? 'selected' : ''}>${gi} ${esc(gn)}</option>`).join('');
 function catRec(key) {
   const me = P('me'); me.cats = me.cats || [];
   let r = me.cats.find(x => x.key === key && !x.deleted);
@@ -3691,18 +3783,19 @@ function catRec(key) {
 }
 const EMOJIS = '🛒🍽️🍔🍕☕🥦🍎🧃🍰🛍️👕👟⌚💄💊🏥🦷🚕🚌⛴️✈️🚆🚗🛵⛽🔧🅿️🔥💡📱📺📶🏠🏡🧹🛠️👶🎓📚🎬🎮⚽🏋️🎁🎉💍🐶🌱💇💳🏦📈💹🪙🥇🧾🛡️⚖️🙏🕉️🎂🧳🏨📦💼🚢🧓👪🤝💰💵🏷️❤️⭐'.match(/\p{Extended_Pictographic}️?/gu);
 function catManager(ty = 'exp') {
-  const list = CATS.filter(c => c[3] === ty && c[0] !== 'wife').concat(BASE_CATS.filter(c => c[3] === ty && HIDDEN_CATS.has(c[0]) && !CATS.some(x => x[0] === c[0])));
-  const rows = list.map((c, i) => { const hid = HIDDEN_CATS.has(c[0]), cu = !BASE_CATS.some(b => b[0] === c[0]); return `<div class="cmrow ${hid ? 'off' : ''}">
+  const groups = GROUPS.filter(g => g[3] === ty);
+  const allOf = g => CATS.filter(c => c[4] === g && c[0] !== 'wife' && !c[0].startsWith('from') && c[0] !== 'tohusband').concat(BASE_CATS.filter(c => c[4] === g && HIDDEN_CATS.has(c[0]) && !CATS.some(x => x[0] === c[0])));
+  const rows = groups.map(([g, gn, gi]) => { const list = allOf(g); return `<div class="cmg"><div class="cmgh">${gi} ${esc(gn)} <span class="muted small">${list.length}</span></div>` + list.map((c, i) => { const hid = HIDDEN_CATS.has(c[0]), cu = !BASE_CATS.some(b => b[0] === c[0]); return `<div class="cmrow ${hid ? 'off' : ''}">
     <button class="itile" style="--ic:${catColor(c[0])}" data-act="cmIcon" data-k="${c[0]}" data-ty="${ty}" title="Change icon">${c[2]}</button>
-    <input class="inp" value="${esc(catName(c[0]))}" data-cname="${c[0]}" data-ty="${ty}" ${c[0] === 'other' ? 'disabled' : ''}>
+    <input class="inp" value="${esc(catName(c[0]))}" data-cname="${c[0]}" data-ty="${ty}" ${['other', 'parents'].includes(c[0]) ? 'disabled' : ''}>
     <button class="btn sm ghost" data-act="cmMove" data-k="${c[0]}" data-d="-1" data-ty="${ty}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
     <button class="btn sm ghost" data-act="cmMove" data-k="${c[0]}" data-d="1" data-ty="${ty}" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
-    ${c[0] === 'other' ? '<span style="width:64px"></span>' : `<button class="btn sm ${hid ? 'pri' : 'ghost'}" data-act="cmHide" data-k="${c[0]}" data-ty="${ty}">${hid ? 'Show' : cu ? 'Remove' : 'Hide'}</button>`}</div>`; }).join('');
-  const body = `<div class="seg" style="margin-bottom:12px">${[['exp', 'Expenses'], ['inc', 'Income'], ['inv', 'Investments']].map(([k, l]) => `<button class="${ty === k ? 'on' : ''}" data-act="cmTab" data-ty="${k}">${l}</button>`).join('')}</div>
-  <div class="small muted" style="margin-bottom:10px">Tap an icon to change it, edit a name to rename, use ↑ ↓ to put your most-used first. Hidden categories stay on old entries but leave the pickers.</div>
+    ${c[0] === 'other' ? '<span style="width:64px"></span>' : `<button class="btn sm ${hid ? 'pri' : 'ghost'}" data-act="cmHide" data-k="${c[0]}" data-ty="${ty}">${hid ? 'Show' : cu ? 'Remove' : 'Hide'}</button>`}</div>`; }).join('') + '</div>'; }).join('');
+  const body = `<div class="seg" style="margin-bottom:12px">${[['exp', 'Spending'], ['inc', 'Income'], ['inv', 'Investments']].map(([k, l]) => `<button class="${ty === k ? 'on' : ''}" data-act="cmTab" data-ty="${k}">${l}</button>`).join('')}</div>
+  <div class="small muted" style="margin-bottom:10px">Main categories (bold) are what charts and budgets show. Under each are its sub-categories: tap an icon to change it, edit a name to rename, ↑ ↓ to reorder. Hidden ones stay on old entries but leave the pickers.</div>
   <div class="cmlist">${rows}</div>
   <div id="cmPick"></div>
-  <div class="card mt" style="padding:14px"><b>＋ New category</b><div class="frow mt"><div class="fld" style="flex:0 0 auto"><label>Icon</label><button class="itile big" id="cmNewIco" data-act="cmIcon" data-k="__new" data-ty="${ty}" style="--ic:#3b82f6">${V3.newIcon || '🏷️'}</button></div><div class="fld"><label>Name</label><input class="inp" id="cmNewName" placeholder="e.g. Pet care, Temple, Gym"></div><div class="fld" style="flex:0 0 auto"><label>&nbsp;</label><button class="btn pri" data-act="cmAdd" data-ty="${ty}">Add</button></div></div></div>`;
+  <div class="card mt" style="padding:14px"><b>＋ New sub-category</b><div class="frow mt"><div class="fld" style="flex:0 0 auto"><label>Icon</label><button class="itile big" id="cmNewIco" data-act="cmIcon" data-k="__new" data-ty="${ty}" style="--ic:#3b82f6">${V3.newIcon || '🏷️'}</button></div><div class="fld"><label>Under</label><select class="inp" id="cmNewGrp">${groups.map(([g, gn, gi]) => `<option value="${g}" ${V3.newGrp === g ? 'selected' : ''}>${gi} ${esc(gn)}</option>`).join('')}</select></div><div class="fld"><label>Name</label><input class="inp" id="cmNewName" placeholder="e.g. Pet care, Gym"></div><div class="fld" style="flex:0 0 auto"><label>&nbsp;</label><button class="btn pri" data-act="cmAdd" data-ty="${ty}">Add</button></div></div></div>`;
   const m = $('#mask .modal.catm');
   if (m) { $('.mb', m).innerHTML = body; return; }
   modal('🏷️ Categories', body, `<button class="btn pri" data-act="closeModal">Done</button>`, { wide: true });
@@ -3719,14 +3812,14 @@ Object.assign(V3ACT, {
   },
   cmSetIcon: el => {
     const k = el.dataset.k, ty = el.dataset.ty;
-    if (k === '__new') { V3.newIcon = el.dataset.e; const nm = $('#cmNewName')?.value; catManager(ty); if (nm) $('#cmNewName').value = nm; return; }
+    if (k === '__new') { V3.newIcon = el.dataset.e; V3.newGrp = $('#cmNewGrp')?.value; const nm = $('#cmNewName')?.value; catManager(ty); if (nm) $('#cmNewName').value = nm; return; }
     const r = catRec(k); r.icon = el.dataset.e; touch(r); save(); applyCats(); catManager(ty); rerender();
   },
   cmMove: el => {
-    const ty = el.dataset.ty, list = CATS.filter(c => c[3] === ty && c[0] !== 'wife').map(c => c[0]), i = list.indexOf(el.dataset.k), j = i + +el.dataset.d;
+    const ty = el.dataset.ty, g = catGroup(el.dataset.k), list = CATS.filter(c => c[4] === g).map(c => c[0]), i = list.indexOf(el.dataset.k), j = i + +el.dataset.d;
     if (i < 0 || j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
-    const base = { exp: 0, inc: 2000, inv: 3000, xfer: 4000 }[ty] || 0;
+    const base = GROUPS.findIndex(x => x[0] === g) * 1000;
     list.forEach((k, n) => { const r = catRec(k); if (r.order !== base + n * 10) { r.order = base + n * 10; touch(r); } });
     save(); applyCats(); catManager(ty);
   },
@@ -3734,8 +3827,9 @@ Object.assign(V3ACT, {
   cmAdd: el => {
     const ty = el.dataset.ty, name = ($('#cmNewName')?.value || '').trim(); if (!name) { toast('Type a name'); return; }
     if (CATS.some(c => catName(c[0]).toLowerCase() === name.toLowerCase())) { toast('That category already exists'); return; }
-    const r = catRec('c_' + uid().slice(0, 8)); Object.assign(r, { custom: true, name, icon: V3.newIcon || '🏷️', type: ty, order: ({ exp: 0, inc: 2000, inv: 3000 }[ty] || 0) - 5 }); touch(r);
-    V3.newIcon = ''; save(); applyCats(); catManager(ty); toast('Added “' + name + '”'); rerender();
+    const grp = $('#cmNewGrp')?.value || GROUPS.find(g => g[3] === ty)[0];
+    const r = catRec('c_' + uid().slice(0, 8)); Object.assign(r, { custom: true, name, icon: V3.newIcon || '🏷️', type: ty, group: grp, order: GROUPS.findIndex(x => x[0] === grp) * 1000 + 990 }); touch(r);
+    V3.newIcon = ''; V3.newGrp = grp; save(); applyCats(); catManager(ty); toast('Added “' + name + '”'); rerender();
   },
 });
 document.addEventListener('change', e => {
@@ -3820,7 +3914,8 @@ VIEWS.dashboard = () => {
   const qa = [['⚡', 'Add expense', 'fastEntry', '#3b82f6'], ['⬆️', 'Import', 'qaImport', '#06b6d4'], ['🧾', 'Add bill', 'editBill" data-kind="bill', '#f59e0b'], ['🤝', 'Friend entry', 'qaFriend', '#10b981'], ['👩', esc(wifeName()), 'go" data-tab="wife', '#8b5cf6'], ['👪', 'Parents', 'go" data-tab="parents', '#ec4899'], ['🔍', 'Duplicates', 'dupCheck" data-prof="me', '#ef4444'], ['📊', 'Reports', 'go" data-tab="reports', '#14b8a6']];
   // categories
   const ct = catTotals(['me'], mf, mt), bmap = {}; bs.forEach(x => bmap[x.b.cat] = x);
-  const cats = Object.entries(ct).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const gt = groupTotals(ct), cats = Object.entries(gt).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([g, v]) => ['g:' + g, v]);
+  const subsOf = g => Object.entries(ct).filter(([c, v]) => v > 0 && catGroup(c) === g).sort((a, b) => b[1] - a[1]);
   // upcoming
   const up = bills.flatMap(b => occurrences(b, td, addDays(td, 45)).map(d => ({ b, d }))).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 8);
   const recent = live(me.txns).sort((a, b) => b.date.localeCompare(a.date) || (b.seq || 0) - (a.seq || 0)).slice(0, 7);
@@ -3853,7 +3948,7 @@ VIEWS.dashboard = () => {
   <div class="sec">Quick actions</div>
   <div class="qa">${qa.map(([i, l, a, c]) => `<button class="qab" data-act="${a}"><span class="itile" style="--ic:${c}">${i}</span><span>${l}</span></button>`).join('')}</div>
   <div class="sec">Category-wise expenses <span class="muted small" style="text-transform:none;letter-spacing:0">· ${ymLabel(mk)}</span><span class="sp"></span><button class="btn sm ghost" data-act="catMgr" style="text-transform:none;letter-spacing:0">🏷️ Edit categories</button></div>
-  ${cats.length ? `<div class="catg">${cats.map(([c, v]) => { const b = bmap[c], p = b ? v / b.b.amount : v / (mT.exp || 1), cls = b ? (p >= 1 ? 'over' : p >= .8 ? 'warn' : '') : 'share'; return `<div class="card catc ${cls}" data-act="drill" data-prof="me" data-from="${mf}" data-to="${mt}" data-cat="${c}"><span class="itile big" style="--ic:${catColor(c)}">${catIcon(c)}</span><div class="cn">${esc(catName(c))}</div><div class="cv"><b class="num">${rs(v)}</b> ${b ? `<span>of ${rs(b.b.amount)}</span>` : `<span>· ${Math.round(p * 100)}% of spending</span>`}</div><div class="cbar"><i style="width:${Math.min(100, p * 100).toFixed(1)}%"></i></div></div>`; }).join('')}</div>`
+  ${cats.length ? `<div class="catg">${cats.map(([c, v]) => { const b = bmap[c], p = b ? v / b.b.amount : v / (mT.exp || 1), cls = b ? (p >= 1 ? 'over' : p >= .8 ? 'warn' : '') : 'share'; return `<div class="card catc ${cls}" data-act="drill" data-prof="me" data-from="${mf}" data-to="${mt}" data-cat="${c}"><span class="itile big" style="--ic:${GCOL(c)}">${catIcon(c)}</span><div class="cn">${esc(catName(c))}</div><div class="cv"><b class="num">${rs(v)}</b> ${b ? `<span>of ${rs(b.b.amount)}</span>` : `<span>· ${Math.round(p * 100)}% of spending</span>`}</div><div class="cbar"><i style="width:${Math.min(100, p * 100).toFixed(1)}%"></i></div><div class="csubs">${subsOf(c.slice(2)).slice(0, 3).map(([sc, sv]) => `<span>${catIcon(sc)} ${esc(catName(sc))} <b>${rsShort(sv)}</b></span>`).join('')}</div></div>`; }).join('')}</div>`
     : `<div class="card">${emptyBox('🛍️', 'No spending recorded for ' + ymLabel(mk), 'Import a statement or add an expense.', `<button class="btn sm pri" data-act="fastEntry">⚡ Add expense</button>`)}</div>`}
   <div class="grid g2 mt">
     <div><div class="sec" style="margin-top:0">Upcoming bills<span class="sp"></span><button class="btn sm ghost" data-act="go" data-tab="upcoming" style="text-transform:none;letter-spacing:0">All →</button></div>
@@ -3874,7 +3969,7 @@ V3ACT.dashPer = el => { VIEW.sub.dashPer = el.dataset.p; rerender(); };
 /* ---------- transaction card row ---------- */
 function txRow(t, profKey) {
   return `<div class="txc" data-act="editTxn" data-id="${t.id}" data-prof="${profKey}" data-lp="1"><span class="itile" style="--ic:${catColor(t.cat)}">${catIcon(t.cat)}</span>
-  <div class="mid"><div class="t1">${esc(maskWife(t.payee || t.note || t.desc))}${needsReview(t) ? ' <span class="conf m" title="Needs check"></span>' : ''}</div><div class="t2">${esc(catName(t.cat))} · ${esc(accName(profKey, t.account))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
+  <div class="mid"><div class="t1">${esc(maskWife(t.payee || t.note || t.desc))}${needsReview(t) ? ' <span class="conf m" title="Needs check"></span>' : ''}</div><div class="t2">${esc(groupName(catGroup(t.cat)))} › ${esc(catName(t.cat))} · ${esc(accName(profKey, t.account))}${t.note ? ' · ' + esc(t.note) : ''}</div></div>
   <div class="r">${amtCell(t)}<div>${txTag(t)}</div></div></div>`;
 }
 
@@ -3897,14 +3992,16 @@ txnsPanel = function (profKey) {
   if (F.app) base = base.filter(t => F.app === 'none' ? (t.mode === 'UPI' && t.dir === 'dr' && !t.app) : t.app === F.app);
   if (F.q) { const q = F.q.toLowerCase(); base = base.filter(t => (maskWife(t.payee || '') + ' ' + maskWife(t.desc) + ' ' + (t.note || '') + ' ' + t.amount + ' ' + (t.app || '') + ' ' + catName(t.cat)).toLowerCase().includes(q)); }
   const byAcc = F.acc ? base.filter(t => t.account === F.acc) : base;
-  const byCat = F.cat ? byAcc.filter(t => t.cat === F.cat) : byAcc;
+  const byCat = F.cat ? byAcc.filter(t => catIn(t, F.cat)) : byAcc;
   const arr = byCat.filter(t => tyMatch(t, F.ty)).sort((a, b) => b.date.localeCompare(a.date) || (b.seq || 0) - (a.seq || 0));
   const T = totals(arr), cnt = f => arr.filter(f).length;
   const xferSum = arr.filter(t => catType(t.cat) === 'xfer').reduce((s, t) => s + t.amount, 0);
   const accs = P(profKey).accounts.filter(a => !a.deleted && base.some(t => t.account === a.id));
-  const catCount = {}; byAcc.filter(t => tyMatch(t, F.ty)).forEach(t => catCount[t.cat] = (catCount[t.cat] || 0) + 1);
-  const topCats = Object.entries(catCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([c]) => c);
-  if (F.cat && !topCats.includes(F.cat)) topCats.unshift(F.cat);
+  const gCount = {}, sCount = {}, selG = F.cat ? catGroup(F.cat) : '';
+  byAcc.filter(t => tyMatch(t, F.ty)).forEach(t => { const g = catGroup(t.cat); gCount[g] = (gCount[g] || 0) + 1; if (g === selG) sCount[t.cat] = (sCount[t.cat] || 0) + 1; });
+  const topGroups = Object.entries(gCount).sort((a, b) => b[1] - a[1]).map(([g]) => g);
+  if (selG && !topGroups.includes(selG)) topGroups.unshift(selG);
+  const subChips = Object.entries(sCount).sort((a, b) => b[1] - a[1]).map(([c]) => c);
   const lim = VIEW.sub['lim_' + profKey] || 150, shown = arr.slice(0, lim);
   const groups = []; shown.forEach(t => { const g = groups[groups.length - 1]; if (g && g.d === t.date) g.l.push(t); else groups.push({ d: t.date, l: [t] }); });
   const chip = (k, v, l, on) => `<button class="fchip ${on ? 'on' : ''}" data-act="fchip" data-k="${k}" data-v="${v}" data-prof="${profKey}">${l}</button>`;
@@ -3920,8 +4017,9 @@ txnsPanel = function (profKey) {
     ${F.from ? `<span class="fchip on">📅 ${F.from === F.to ? fmtDateShort(F.from) : fmtDateShort(F.from) + ' – ' + fmtDateShort(F.to)}</span>` : ''}</div>
   <div class="chips">${TY_CHIPS.filter(([v]) => profKey === 'me' || !['wife', 'friend', 'parents'].includes(v)).map(([v, l]) => chip('ty', v, (l === '__ABB' ? esc(wifeName()) : l) + ` <i>${byCat.filter(t => tyMatch(t, v)).length}</i>`, (F.ty || '') === v)).join('')}</div>
   ${accs.length > 1 ? `<div class="chips">${chip('acc', '', '🏦 All accounts', !F.acc)}${accs.map(a => chip('acc', a.id, esc(a.name), F.acc === a.id)).join('')}</div>` : ''}
-  <div class="chips">${chip('cat', '', '🏷️ All categories', !F.cat)}${topCats.map(c => chip('cat', c, catIcon(c) + ' ' + esc(catName(c)), F.cat === c)).join('')}
-    <select class="fchip sel" data-act="flt" data-k="cat" data-prof="${profKey}"><option value="">More…</option>${catOptions(F.cat)}</select>
+  <div class="chips">${chip('cat', '', '🏷️ All categories', !F.cat)}${topGroups.map(g => chip('cat', 'g:' + g, groupIcon(g) + ' ' + esc(groupName(g)) + ` <i>${gCount[g] || 0}</i>`, selG === g)).join('')}</div>
+  ${selG && subChips.length ? `<div class="chips subc">${chip('cat', 'g:' + selG, 'All ' + esc(groupName(selG)), F.cat === 'g:' + selG)}${subChips.map(c => chip('cat', c, catIcon(c) + ' ' + esc(catName(c)) + ` <i>${sCount[c]}</i>`, F.cat === c)).join('')}</div>` : ''}
+  <div class="chips"><select class="fchip sel" data-act="flt" data-k="cat" data-prof="${profKey}"><option value="">Pick a sub-category…</option>${catOptions(isG(F.cat) ? '' : F.cat)}</select>
     ${F.app ? `<span class="fchip on">${esc(F.app === 'none' ? 'App unknown' : F.app)}</span>` : ''}${F.forWho ? `<span class="fchip on">👪 For parents</span>` : ''}
     ${active ? `<button class="fchip clr" data-act="fltClear" data-prof="${profKey}">✕ Clear filters</button>` : ''}</div>
   <div class="small muted" style="margin:4px 2px 8px">${arr.length} entr${arr.length === 1 ? 'y' : 'ies'} · tap to open · press and hold to delete</div>
@@ -3962,11 +4060,14 @@ function feCats(prof, dir) {
 }
 const feVal = () => (FE.amt || '').split('+').reduce((s, x) => s + (parseFloat(x) || 0), 0);
 function feBody() {
-  const cats = feCats(FE.prof, FE.dir);
-  if (!cats.includes(FE.cat)) FE.cat = cats[0];
+  const all = feCats(FE.prof, FE.dir), grps = [...new Set(all.map(catGroup))];
+  if (!all.includes(FE.cat)) FE.cat = all[0];
+  if (!FE.grp || !grps.includes(FE.grp)) FE.grp = catGroup(FE.cat);
+  const cats = all.filter(c => catGroup(c) === FE.grp);
   const modes = FE_MODES[FE.dir]; if (!modes.includes(FE.pay)) FE.pay = modes[0];
   return `<div class="fe">
   <div class="seg fe-tabs">${[['dr', '💸 Expense'], ['cr', '💰 Income'], ['x', '🔄 Transfer · Invest']].map(([k, l]) => `<button class="${FE.dir === k ? 'on' : ''}" data-act="feTab" data-d="${k}">${l}</button>`).join('')}</div>
+  ${grps.length > 1 ? `<div class="fe-grps">${grps.map(g => `<button class="fe-grp ${FE.grp === g ? 'on' : ''}" data-act="feGrp" data-g="${g}" style="--ic:${GCOLORS[g]}"><span>${groupIcon(g)}</span><small>${esc(groupName(g))}</small></button>`).join('')}</div>` : ''}
   <div class="fe-cats">${cats.map(c => `<button class="fe-cat ${FE.cat === c ? 'on' : ''}" data-act="feCat" data-c="${c}" style="--ic:${catColor(c)}"><span>${catIcon(c)}</span><small>${esc(catName(c))}</small></button>`).join('')}<button class="fe-cat edit" data-act="catMgr"><span>✏️</span><small>Edit</small></button></div>
   <div class="fe-pay">${modes.map(m => `<button class="fchip ${FE.pay === m ? 'on' : ''}" data-act="fePay" data-m="${m}">${esc(m)}</button>`).join('')}</div>
   <div class="fe-row"><input class="inp" id="fe_note" placeholder="Paid to / note (optional)" value="${esc(FE.note || '')}"><input class="inp" id="fe_date" type="date" value="${FE.date}"><select class="inp" id="fe_acc">${accOptions(FE.prof, FE.acc, false)}</select></div>
@@ -3985,8 +4086,9 @@ function fastEntry(prof = 'me') {
 }
 Object.assign(V3ACT, {
   fastEntry: el => fastEntry(el.dataset.prof || (VIEW.tab === 'wife' ? 'wife' : VIEW.tab === 'parents' ? 'parents' : 'me')),
-  feTab: el => { feKeep(); FE.dir = el.dataset.d; FE.cat = ''; feRender(); },
+  feTab: el => { feKeep(); FE.dir = el.dataset.d; FE.cat = ''; FE.grp = ''; feRender(); },
   feCat: el => { feKeep(); FE.cat = el.dataset.c; feRender(); },
+  feGrp: el => { feKeep(); FE.grp = el.dataset.g; const first = feCats(FE.prof, FE.dir).find(c => catGroup(c) === FE.grp); if (first) FE.cat = first; feRender(); },
   fePay: el => { feKeep(); FE.pay = el.dataset.m; feRender(); },
   feKey: el => {
     feKeep(); const k = el.dataset.k; let a = FE.amt || '';
