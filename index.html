@@ -539,6 +539,9 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
 @media (max-width:760px){.mstrip{grid-template-columns:repeat(6,minmax(0,1fr))}}
 
 @media (max-width:760px){#mask .modal .grid.g3{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}#mask .modal .grid.g3 .kpi{padding:10px}#mask .modal .grid.g3 .kpi .val{font-size:16px}}
+.toast.upd{pointer-events:auto;cursor:pointer;background:linear-gradient(135deg,#42a5f5,#1e88e5);color:#fff;border:0;font-weight:600;box-shadow:0 10px 28px rgba(30,136,229,.45);z-index:200}
+.vrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.vrow>div{flex:1;min-width:110px;background:var(--card2);border-radius:14px;padding:10px 12px}.vrow small{display:block;color:var(--tx3);font-size:11.5px}.vrow b{display:block;font-size:18px;margin:2px 0}
+.btn.big{padding:12px 22px;font-size:15px}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -874,7 +877,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.6';
+const APP_VER = '3.7';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1340,16 +1343,34 @@ async function callScript(body) {
   const r = await fetch(S.settings.sync.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), redirect: 'follow' });
   const j = await r.json(); if (!j.ok) throw new Error(j.error || 'Sync failed'); return j;
 }
-async function runSync() {
-  const { url, key } = S.settings.sync; if (!url || !key) throw new Error('Sync is not set up yet — add your Apps Script link in Settings.');
-  for (const prof of PROFS) {
-    const pulled = await callScript({ key, action: 'pull', profile: prof });
-    mergeProfile(P(prof), pulled.data);
-    dedupeSeeds();
-    await callScript({ key, action: 'push', profile: prof, data: P(prof) });
-  }
-  S.settings.sync.lastAt = nowIso(); await persist();
+/* the copy in Google Drive is encrypted with a separate sync password that is typed only in the app (never stored in Google) */
+async function sealData(obj) {
+  const pw = S.settings.sync.encPw; if (!pw) return obj;
+  if (!HAS_CRYPTO) throw new Error('This browser can’t encrypt — open the app from its https link.');
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), k = await deriveKey(pw, salt);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, new TextEncoder().encode(JSON.stringify(obj))));
+  return { bwfEnc: 1, salt: b64.enc(salt), iv: b64.enc(iv), ct: b64.enc(ct) };
 }
+async function openData(d) {
+  if (!d || !d.bwfEnc) return d;
+  const pw = S.settings.sync.encPw;
+  if (!pw) throw new Error('The copy in your Google Drive is encrypted. Type the encryption password in ⟳ Sync & Update, then sync again.');
+  try { const k = await deriveKey(pw, b64.dec(d.salt)); return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.dec(d.iv) }, k, b64.dec(d.ct)))); }
+  catch (e) { throw new Error('Wrong encryption password — it must be exactly the same on all your devices.'); }
+}
+async function runSync(onStep) {
+  const { url, key } = S.settings.sync; if (!url || !key) throw new Error('Sync is not set up yet — open ⟳ Sync & Update.');
+  for (const prof of PROFS) {
+    onStep && onStep('Downloading ' + prof + '…');
+    const pulled = await callScript({ key, action: 'pull', profile: prof });
+    mergeProfile(P(prof), await openData(pulled.data));
+    dedupeSeeds();
+    onStep && onStep('Uploading ' + prof + '…');
+    await callScript({ key, action: 'push', profile: prof, data: await sealData(P(prof)) });
+  }
+  S.settings.sync.lastAt = nowIso(); S.settings.sync.lastDev = deviceName(); await persist();
+}
+function deviceName() { const u = navigator.userAgent; return /iPad|Macintosh/.test(u) && 'ontouchend' in document ? 'iPad' : /iPhone/.test(u) ? 'iPhone' : /Android/.test(u) ? (/Mobile/.test(u) ? 'Android phone' : 'Android tablet') : 'Computer'; }
 const APPS_SCRIPT = `// BlueWave Finance — personal sync (paste into script.google.com)
 // 1) Change SECRET below to your own long password (same one you type in the app).
 // 2) Deploy > New deployment > Web app > Execute as: Me, Who has access: Anyone.
@@ -4269,6 +4290,84 @@ MORE_TILES.splice(4, 0, ['stmts', '📂', 'Statements', '#0ea5e9']);
 // batch import → stay on the Statements tab when started there
 const _batchGo = ACT.batchGo;
 ACT.batchGo = el => { const onSt = VIEW.tab === 'stmts'; _batchGo(el); if (onSt) { VIEW.tab = 'stmts'; render(); } };
+
+/* ============ ⟳ Sync & Update tab ============ */
+const UPD = { latest: null, checking: false, err: '', at: null };
+const verNum = v => String(v || '0').split('.').map(n => +n || 0).reduce((a, n) => a * 1000 + n, 0);
+async function checkLatest(quiet) {
+  UPD.checking = true; UPD.err = ''; if (!quiet) rerenderIf('syncup');
+  try {
+    if (!navigator.onLine) throw new Error('You’re offline — connect to the internet to check.');
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('Could not reach the app website (' + r.status + ').');
+    UPD.latest = (await r.json()).v; UPD.at = nowIso();
+    try { const reg = window.__swReg || (navigator.serviceWorker && await navigator.serviceWorker.getRegistration()); if (reg) reg.update(); } catch (e) { }
+  } catch (e) { UPD.err = e.message || String(e); }
+  UPD.checking = false; rerenderIf('syncup');
+}
+function rerenderIf(tab) { if (S && VIEW.tab === tab && !$('#mask .modal')) rerender(); }
+async function applyUpdate() {
+  toast('Updating…', 8000);
+  try {
+    const reg = window.__swReg || (navigator.serviceWorker && await navigator.serviceWorker.getRegistration());
+    if (reg) { await reg.update(); const w = reg.waiting || reg.installing; if (w) { w.postMessage('skipWaiting'); await new Promise(res => { const t = setTimeout(res, 6000); navigator.serviceWorker.addEventListener('controllerchange', () => { clearTimeout(t); res(); }, { once: true }); }); } }
+    if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); }   // drop the old copy so the newest files load
+  } catch (e) { }
+  location.replace(location.pathname + '?v=' + encodeURIComponent(UPD.latest || Date.now()));
+}
+window.bwfApplyUpdate = applyUpdate;
+
+VIEWS.syncup = () => {
+  const sy = S.settings.sync, n = unsyncedCount(), setUp = !!(sy.url && sy.key);
+  if (!UPD.latest && !UPD.checking && !UPD.err && navigator.onLine) setTimeout(() => checkLatest(true), 50);
+  const newer = UPD.latest && verNum(UPD.latest) > verNum(APP_VER);
+  const upd = `<div class="card"><h3>⬆️ App update</h3>
+    <div class="vrow"><div><small>Installed on this device</small><b>v${APP_VER}</b></div><div><small>Latest available</small><b>${UPD.checking ? '…' : UPD.latest ? 'v' + esc(UPD.latest) : '—'}</b></div></div>
+    ${UPD.err ? `<div class="alert amb">⚠️ <div>${esc(UPD.err)}</div></div>` : newer ? `<div class="alert acc">✨ <div><b>Version ${esc(UPD.latest)} is ready.</b> Update now — your data stays as it is.</div></div>` : UPD.latest ? `<div class="alert grn">✅ <div>This device is up to date.</div></div>` : ''}
+    <div class="flex">${newer ? `<button class="btn pri big" data-act="updNow">⬆️ Update now</button>` : ''}<button class="btn" data-act="updCheck" ${UPD.checking ? 'disabled' : ''}>${UPD.checking ? 'Checking…' : '🔄 Check for update'}</button>${!newer && UPD.latest ? `<button class="btn ghost" data-act="updNow" title="Reload the newest files">Reload app</button>` : ''}</div>
+    <div class="small muted mt">Update every device first, then sync.</div></div>`;
+  const status = `<div class="card"><h3>⟳ Sync <small>only when you press it</small></h3>
+    <div class="vrow"><div><small>Last synced</small><b>${sy.lastAt ? fmtDate(sy.lastAt.slice(0, 10)) + ' · ' + new Date(sy.lastAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'never'}</b>${sy.lastDev ? `<small>on this ${esc(sy.lastDev)}</small>` : ''}</div><div><small>Changes waiting here</small><b>${n}</b></div><div><small>Drive copy</small><b>${sy.encPw ? '🔒 Encrypted' : '🔓 Not encrypted'}</b></div></div>
+    ${setUp ? `<div class="flex"><button class="btn pri big" data-act="sync">⟳ Sync now</button><button class="btn" data-act="syncTest">🔌 Test connection</button></div><div id="syncTestOut" class="small mt"></div>` : `<div class="alert amb">⚙️ <div>Not set up yet — fill in the 2 boxes below (5-minute setup).</div></div>`}</div>`;
+  const setup = `<div class="card"><h3>⚙️ Sync setup</h3>
+    <div class="fld" style="margin-bottom:10px"><label>1 · Apps Script Web app link</label><input class="inp" data-sync="url" value="${esc(sy.url)}" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="fld" style="margin-bottom:10px"><label>2 · Sync key (same as SECRET in the script)</label><input class="inp" type="password" autocomplete="off" data-sync="key" value="${esc(sy.key)}"></div>
+    <div class="fld" style="margin-bottom:6px"><label>3 · Encryption password <span class="pill grn" style="font-size:10px">recommended</span></label><input class="inp" type="password" autocomplete="new-password" data-sync="encPw" value="${esc(sy.encPw || '')}" placeholder="Type the same password on every device"></div>
+    <div class="small muted">Only typed in this app — never saved in Google. With it, the copy in your Drive is unreadable scrambled data (AES-256). Use the <b>same</b> password on your phone and iPad. If you forget it, just set a new one on every device — your data is on the devices.</div>
+    <details class="mt"><summary class="b" style="cursor:pointer">How to set up (5 minutes, free)</summary><ol class="small" style="color:var(--tx2);padding-left:18px">
+    <li>Open <b>script.google.com</b> → New project.</li><li>Paste the code below and change <code>SECRET</code> to your own password → 💾 Save.</li><li>Deploy → New deployment → <b>Web app</b> → Execute as <b>Me</b> → Who has access <b>Anyone</b> → Deploy → Authorize.</li><li>Copy the Web app link and the SECRET into boxes 1 and 2. Choose an encryption password for box 3.</li><li>Do the same on your other devices, tap 🔌 Test connection, then ⟳ Sync.</li>
+    <li>Changed the script later? Deploy → Manage deployments → ✏️ → Version: <b>New version</b> → Deploy (the link stays the same).</li></ol>
+    <div class="code" id="gsCode">${esc(APPS_SCRIPT)}</div><button class="btn sm mt" data-act="copyScript">📋 Copy script</button></details></div>`;
+  const order = `<div class="card"><h3>📋 Best order with two devices</h3><ol class="small" style="color:var(--tx2);padding-left:18px;margin:0">
+    <li>Update the app on <b>both</b> devices (top card).</li><li>On the device with the newest work (e.g. where you imported statements): <b>Sync</b>.</li><li>On the other device: <b>Sync</b>.</li><li>Back on the first device: <b>Sync</b> once more — now both match.</li></ol></div>`;
+  return `<div class="grid g2">${upd}${status}</div><div class="grid g21 mt">${setup}${order}</div>`;
+};
+Object.assign(ACT, {
+  updCheck: () => checkLatest(false),
+  updNow: () => applyUpdate(),
+  syncTest: async () => {
+    const out = $('#syncTestOut'); if (out) out.innerHTML = '<span class="muted">Testing…</span>';
+    const say = (ok, msg) => { if (out) out.innerHTML = `<span class="${ok ? 'cr' : 'dr'} b">${ok ? '✅' : '❌'} ${msg}</span>`; };
+    try {
+      if (!navigator.onLine) throw new Error('You’re offline.');
+      const r = await callScript({ key: S.settings.sync.key, action: 'pull', profile: 'me' });
+      if (!r.data) return say(true, 'Connected. Nothing in Drive yet — tap Sync now to upload.');
+      if (r.data.bwfEnc) { if (!S.settings.sync.encPw) return say(false, 'Connected, but the Drive copy is encrypted — type the encryption password in box 3.'); await openData(r.data); return say(true, 'Connected · Drive copy is encrypted and your password is correct.'); }
+      say(true, 'Connected.' + (S.settings.sync.encPw ? ' The Drive copy will be encrypted on your next Sync.' : ' Tip: add an encryption password (box 3).'));
+    } catch (e) { const m = String(e.message || e); say(false, /Wrong sync key/i.test(m) ? 'Wrong sync key — it must match SECRET in the script exactly (and redeploy a New version after changing it).' : /Failed to fetch|NetworkError|Load failed/i.test(m) ? 'Could not reach the link — check box 1 (it must end in /exec) and that access is “Anyone”.' : m); }
+  },
+});
+// Sync button when not set up → open this tab
+ACT.sync = (orig => el => { if (!S.settings.sync.url || !S.settings.sync.key) { closeModal(); VIEW.tab = 'syncup'; render(); return; } orig(el); })(ACT.sync);
+// menu entries
+NAV.splice(NAV.findIndex(n => n[0] === 'settings'), 0, ['syncup', 'Sync & Update', '⟳']);
+TITLES.syncup = 'Sync & Update';
+MORE_TILES.splice(MORE_TILES.length - 1, 0, ['syncup', '⟳', 'Sync & Update', '#22c55e']);
+// Settings: point to the new tab instead of the old sync card
+const _settingsV2 = VIEWS.settings;
+VIEWS.settings = () => _settingsV2().replace(/<div class="card"><h3>⟳ Sync <small>manual[\s\S]*?<button class="btn sm mt" data-act="copyScript">📋 Copy script<\/button><\/details><\/div>/, `<div class="card"><h3>⟳ Sync & Update</h3><div class="small muted" style="margin-bottom:12px">Sync setup, encryption password and app updates now have their own tab.</div><button class="btn pri" data-act="go" data-tab="syncup">Open Sync & Update →</button></div>`);
+// check quietly on start, and show a badge on the menu when an update exists
+setTimeout(() => { if (navigator.onLine) checkLatest(true).then(() => { if (UPD.latest && verNum(UPD.latest) > verNum(APP_VER)) { const b = document.createElement('div'); b.className = 'toast upd'; b.innerHTML = '✨ Version ' + esc(UPD.latest) + ' is ready — <b>tap to update</b>'; b.onclick = applyUpdate; $$('.toast.upd').forEach(x => x.remove()); document.body.appendChild(b); } }); }, 4000);
 </script>
-<script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){const b=document.createElement('div');b.className='toast';b.innerHTML='New version ready — <a href="#" onclick="location.reload();return false">tap to update</a>';document.body.appendChild(b);}});});}).catch(()=>{});}</script>
+<script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
