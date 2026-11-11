@@ -886,7 +886,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.9';
+const APP_VER = '3.10';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -943,7 +943,7 @@ const CATS = [
   // 🎬 Subscriptions & Fun
   ['subs', 'OTT & subscriptions', '🔁', 'exp', 'fun'], ['tools', 'Apps & trading tools', '🛠️', 'exp', 'fun'], ['entertainment', 'Movies & outings', '🎬', 'exp', 'fun'],
   // 👪 Family
-  ['wife', 'ABB', '👩', 'exp', 'family'], ['parents', 'Mom & Dad', '👪', 'exp', 'family'], ['brother', 'Brother (Nitesh)', '🧑', 'exp', 'family'], ['gifts', 'Gifts', '🎁', 'exp', 'family'], ['donation', 'Donation / Devotion', '🙏', 'exp', 'family'],
+  ['wife', 'ABB', '👩', 'exp', 'family'], ['parents', 'Mom & Dad', '👪', 'exp', 'family'], ['brother', 'Brother (Nitesh)', '🧑', 'exp', 'family'], ['todad', 'Sent to Dad (via someone)', '👴', 'exp', 'family'], ['gifts', 'Gifts', '🎁', 'exp', 'family'], ['donation', 'Donation / Devotion', '🙏', 'exp', 'family'],
   // 💳 Loans & Cards
   ['ccbill', 'Credit card bill', '💳', 'exp', 'loans'], ['emi', 'Loan EMI', '🏦', 'exp', 'loans'], ['carloan', 'Car loan', '🚘', 'exp', 'loans'],
   // 🛡️ Insurance
@@ -1100,7 +1100,7 @@ function seedState() {
   const s = {
     v: 1,
     settings: {
-      meName: 'Ritesh', wifeName: 'ABB', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '', sonsMatch: { ritesh: 'RITESH BAGHEL, RITESH B, RITESH', nitesh: 'NITESH BAGHEL, NITESH K, NITESH' }, sonNames: { ritesh: 'Ritesh', nitesh: 'Nitesh (brother)' },
+      meName: 'Ritesh', wifeName: 'ABB', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '', sonsMatch: { ritesh: 'RITESH BAGHEL, RITESH B, RITESH', nitesh: 'NITESH BAGHEL, NITESH K, NITESH' }, sonNames: { ritesh: 'Ritesh', nitesh: 'Nitesh (brother)' }, dadVia: 'KHEM CHAND',
       upiIds: { PhonePe: '', GPay: '', Paytm: '', 'Amazon Pay': '' }, lockMins: 5, theme: 'dark',
       sync: { url: '', key: '', lastAt: null }, remind: [3, 1],
     },
@@ -1159,6 +1159,11 @@ function migrate() { const d = seedState(); S.settings = Object.assign(d.setting
   try { dedupeSeeds(); } catch (e) { console.warn(e); }
   S.settings.sonsMatch = S.settings.sonsMatch || { ritesh: 'RITESH BAGHEL, RITESH B, RITESH', nitesh: 'NITESH BAGHEL, NITESH K, NITESH' };
   S.settings.sonNames = S.settings.sonNames || { ritesh: 'Ritesh', nitesh: 'Nitesh (brother)' };
+  if (S.settings.dadVia == null) S.settings.dadVia = 'KHEM CHAND';
+  if (!S.settings.dadViaV1) { S.settings.dadViaV1 = 1;
+    live(S.profiles.me.txns || []).forEach(t => { if (t.userSet || t.dir !== 'dr') return; const r = classify(t, 'me');
+      if (r.cat === 'todad' && t.cat !== 'todad') { t.cat = 'todad'; t.person = 'ritesh'; t.via = r.via; touch(t); } });
+  }
   if (!S.settings.sonsV1) { S.settings.sonsV1 = 1;
     live(S.profiles.parents.loans || []).forEach(l => { if (/car/i.test(l.name || '') && !l.match) { l.match = 'RASECC'; touch(l); } });
     [['parents', ['pension', 'carloan', 'emi', 'fromson', 'toson']], ['me', ['brother', 'family']]].forEach(([k, keep]) => live(S.profiles[k].txns || []).forEach(t => {
@@ -1221,6 +1226,8 @@ function sonOf(profKey, t, c) {
   if (profKey === 'parents') { const nums = String(t.desc || '').match(/\d{9,18}/g) || [], mine = live(S.profiles.me.accounts || []).filter(a => a.last4).map(a => a.last4); if (nums.some(n => mine.includes(n.slice(-4)))) return 'ritesh'; }
   return null;
 }
+// people you pay so they hand Dad the cash (e.g. Khem Chand) — counted as money you gave Dad
+function dadViaOf(c) { const w = String((S.settings && S.settings.dadVia) || '').split(',').map(x => x.trim()).filter(x => compact(x).length >= 4).find(x => c.includes(compact(x))); return w ? w.toLowerCase().replace(/\b\w/g, x => x.toUpperCase()) : null; }
 function classify(t, profKey) {
   const prof = P(profKey), st = S.settings;
   const c = compact(t.desc), out = { cat: 'other', conf: 'l', app: null, appConf: null, flags: [] };
@@ -1236,6 +1243,7 @@ function classify(t, profKey) {
   if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
   else if ((isSelf || selfUpi) && profKey === 'me') { out.cat = 'self'; out.conf = 'h'; }
   else if (profKey === 'me' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
+  else if (profKey === 'me' && t.dir === 'dr' && dadViaOf(c)) { out.cat = 'todad'; out.conf = 'h'; out.person = 'ritesh'; out.via = dadViaOf(c); out.for = 'parents'; }
   else if (profKey === 'me' && t.dir === 'dr' && listOf(st.parentsMatch).some(w => w.length >= 4 && c.includes(w))) { out.cat = 'parents'; out.conf = 'h'; out.for = 'parents'; }
   else if (profKey === 'wife' && t.dir === 'cr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'fromhusband'; out.conf = 'h'; }
   else if (profKey === 'wife' && t.dir === 'dr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'tohusband'; out.conf = 'h'; }
@@ -2019,7 +2027,7 @@ function importRows(I, link) {
   I.rows.filter(r => !r.sel && r.dup === 'sure' && r.matchId).forEach(r => { const o = prof.txns.find(x => x.id === r.matchId);
     if (o && !o.deleted && o.source === 'import' && !o.reviewed && compact(o.desc) !== compact(r.desc)) { Object.assign(o, { desc: r.desc, ref: r.ref || o.ref, payee: r.payee, mode: r.mode, remark: r.remark, cat: r.cat, conf: r.conf, app: r.app, appConf: r.appConf }); touch(o); repaired++; } });
   I.rows.filter(r => r.sel).forEach(r => {
-    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', person: r.person || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
+    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', person: r.person, via: r.via || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
     if (t.remark && /HOME\s*EXPE|HOME\s*RENT/i.test(t.remark)) t.note = /RENT/i.test(t.remark) ? 'Home rent' : 'Home expense';
     if (r.dup && r.action === 'replace' && r.matchId) { mergeInto(I.profKey, t, r.matchId); merged++; }
     if (r.dup && r.action === 'keep' && r.matchId) { const o = prof.txns.find(x => x.id === r.matchId); if (o) { o.notDup = [...(o.notDup || []), t.id]; touch(o); } t.notDup = [r.matchId]; }
@@ -3698,7 +3706,7 @@ function reclassify(k) {
   let n = 0;
   live(P(k).txns).filter(t => !t.reviewed && t.source === 'import' && !t.billId).forEach(t => {
     const c = classify(t, k); if (t.cat === 'friend' && t.friendId) return;
-    if (c.cat !== t.cat || c.app !== t.app || (c.for && c.for !== t.for) || (c.person && c.person !== t.person)) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); if (c.for) t.for = c.for; if (c.person) t.person = c.person; if (c.loanId) t.loanId = c.loanId; touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
+    if (c.cat !== t.cat || c.app !== t.app || (c.for && c.for !== t.for) || (c.person && c.person !== t.person)) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); if (c.for) t.for = c.for; if (c.person) t.person = c.person; if (c.via) t.via = c.via; if (c.loanId) t.loanId = c.loanId; touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
   });
   save(); rerender(); return n;
 }
@@ -4496,7 +4504,9 @@ setTimeout(() => { if (navigator.onLine && /^http/.test(location.protocol)) chec
 /* ============ Mom & Dad → Sons' ledger: how much each son took from Dad's account and gave back ============ */
 const SONS = ['ritesh', 'nitesh'];
 const sonName = k => ((S.settings.sonNames || {})[k]) || (k === 'ritesh' ? 'Ritesh' : 'Nitesh (brother)');
-function sonTx(k) { return live(P('parents').txns).filter(t => t.person === k && ['toson', 'fromson'].includes(t.cat)).sort((a, b) => a.date.localeCompare(b.date) || (a.seq || 0) - (b.seq || 0)); }
+// money you paid to a middle person (Khem Chand…) who handed Dad the cash — lives in your own account, counts as given to Dad
+const viaTx = () => live(P('me').txns).filter(t => t.cat === 'todad' && t.dir === 'dr');
+function sonTx(k) { return live(P('parents').txns).filter(t => t.person === k && ['toson', 'fromson'].includes(t.cat)).concat(k === 'ritesh' ? viaTx().map(t => Object.assign(Object.create(t), { cat: 'fromson', _via: true })) : []).sort((a, b) => a.date.localeCompare(b.date) || (a.seq || 0) - (b.seq || 0)); }
 function sonSum(k) { const tx = sonTx(k), took = tx.filter(t => t.cat === 'toson').reduce((s, t) => s + t.amount, 0), gave = tx.filter(t => t.cat === 'fromson').reduce((s, t) => s + t.amount, 0); return { tx, took, gave, owes: took - gave }; }
 function sonsView() {
   const sel = VIEW.sub.sonSel || 'ritesh', sums = Object.fromEntries(SONS.map(k => [k, sonSum(k)]));
@@ -4509,13 +4519,13 @@ function sonsView() {
   const fy = {}; S1.tx.forEach(t => { const y = fyOf(t.date); fy[y] = fy[y] || { took: 0, gave: 0 }; fy[y][t.cat === 'toson' ? 'took' : 'gave'] += t.amount; });
   return `<div class="khead" style="background:linear-gradient(135deg,#0f766e,#0e7490 55%,#1d4ed8)"><div class="kmain"><div><small>👨‍👦 SONS OWE DAD (NET)</small><b class="num">${rs(Math.max(0, total))}</b></div><div class="kr"><small>${total < 0 ? 'DAD OWES SONS' : 'TRANSFERS TRACKED'}</small><b class="num">${total < 0 ? rs(-total) : SONS.reduce((s, k) => s + sums[k].tx.length, 0)}</b></div></div>
     <div class="kstats">${SONS.map(k => `<div><small>${esc(sonName(k))}</small><b class="num">${sums[k].owes >= 0 ? rsShort(sums[k].owes) : '−' + rsShort(-sums[k].owes)}</b></div>`).join('')}<div><small>From Dad's account</small><b>${esc(accName('parents', (P('parents').accounts.find(a => !a.deleted && a.type !== 'Cash') || {}).id) || 'PNB')}</b></div></div></div>
-  <div class="small muted" style="margin:0 2px 12px">Money taken from Dad's account is his money — it counts as owed to him. Money sent back to Dad reduces it. These transfers are not counted as Dad's spending or income.</div>
+  <div class="small muted" style="margin:0 2px 12px">Money taken from Dad's account is his money — it counts as owed to him. Money sent back to Dad (directly, or as cash through ${esc(S.settings.dadVia ? S.settings.dadVia.split(',')[0].trim().toLowerCase().replace(/\b\w/g, x => x.toUpperCase()) : 'someone')}) reduces it. These transfers are not counted as Dad's spending or income.</div>
   <div class="grid g2">${SONS.map(k => { const x = sums[k]; return `<div class="card sonc ${sel === k ? 'on' : ''}" data-act="sonSel" data-k="${k}">${avatar(sonName(k).replace(/\s*\(.*\)/, "") + " Baghel", 48)}<div class="mid"><div class="t1">${esc(sonName(k))}</div><div class="sonrow"><span>Took from Dad <b class="dr num">${rs(x.took)}</b></span><span>Gave to Dad <b class="cr num">${rs(x.gave)}</b></span></div><div style="margin-top:6px">${owesTxt(k, x.owes)}</div><div class="t2">${x.tx.length} transfer${x.tx.length === 1 ? '' : 's'}${x.tx.length ? ' · since ' + fmtDate(x.tx[0].date) : ''}</div></div></div>`; }).join('')}</div>
   ${untagged.length ? `<div class="card mt"><h3>❓ Transfers not yet linked to a son <small>${untagged.length}</small></h3>${untagged.slice(0, 20).map(t => `<div class="txc"><span class="itile" style="--ic:#f59e0b">${t.dir === 'dr' ? '↗️' : '↙️'}</span><div class="mid"><div class="t1">${esc(t.payee || t.desc)}</div><div class="t2">${fmtDate(t.date)} · ${t.dir === 'dr' ? 'Dad paid out' : 'Dad received'}</div></div><div class="r">${amtCell(t)}<div class="flex" style="gap:4px;margin-top:4px">${SONS.map(k => `<button class="btn sm" data-act="sonTag" data-id="${t.id}" data-k="${k}">${esc(sonName(k).split(' ')[0])}</button>`).join('')}</div></div></div>`).join('')}</div>` : ''}
   <div class="sec">${esc(sonName(sel))} — every transfer<span class="sp"></span><button class="btn sm pri" data-act="sonCash" data-k="${sel}" style="text-transform:none;letter-spacing:0">＋ Cash / other entry</button></div>
   ${Object.keys(fy).length ? `<div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Financial year</th><th class="ra">Took</th><th class="ra">Gave back</th><th class="ra">Net that year</th></tr></thead><tbody>${Object.entries(fy).sort((a, b) => b[0].localeCompare(a[0])).map(([y, v]) => `<tr><td>${esc(y)}</td><td class="ra num dr">${rs(v.took)}</td><td class="ra num cr">${rs(v.gave)}</td><td class="ra num b">${rs(v.took - v.gave)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
-  <div class="card mt" style="padding:4px 14px">${rows.length ? rows.map(({ t, run }) => `<div class="txc" data-act="editTxn" data-id="${t.id}" data-prof="parents"><span class="itile" style="--ic:${t.cat === 'toson' ? '#ef4444' : '#10b981'}">${t.cat === 'toson' ? '↗️' : '↙️'}</span><div class="mid"><div class="t1">${t.cat === 'toson' ? 'Took from Dad' : 'Gave to Dad'}${t.source === 'manual' ? ' · ' + esc(t.mode || 'Cash') : ''}</div><div class="t2">${fmtDate(t.date)} · ${esc(t.note || t.desc)}</div></div><div class="r"><b class="num ${t.cat === 'toson' ? 'dr' : 'cr'}">${t.cat === 'toson' ? '+' : '−'}${rs(t.amount)}</b><div class="t2">owes ${rs(run)}</div></div></div>`).join('') : emptyBox('👨‍👦', 'No transfers found yet', 'Import Dad’s PNB statement — transfers with ' + esc(sonName(sel).split(' ')[0]) + ' are picked up automatically.', '')}</div>
-  <div class="small muted mt">Names recognised in Dad’s statement: ${SONS.map(k => `<b>${esc(sonName(k))}</b>: ${esc((S.settings.sonsMatch || {})[k] || '')}`).join(' · ')} (plus your own account numbers). <a href="#" data-act="sonNames">Edit</a></div>`;
+  <div class="card mt" style="padding:4px 14px">${rows.length ? rows.map(({ t, run }) => `<div class="txc" data-act="editTxn" data-id="${t.id}" data-prof="${t._via ? 'me' : 'parents'}"><span class="itile" style="--ic:${t.cat === 'toson' ? '#ef4444' : '#10b981'}">${t.cat === 'toson' ? '↗️' : '↙️'}</span><div class="mid"><div class="t1">${t.cat === 'toson' ? 'Took from Dad' : 'Gave to Dad'}${t._via ? ' · cash via ' + esc(t.via || t.payee || 'someone') : t.source === 'manual' ? ' · ' + esc(t.mode || 'Cash') : ''}</div><div class="t2">${fmtDate(t.date)} · ${esc(t.note || t.desc)}</div></div><div class="r"><b class="num ${t.cat === 'toson' ? 'dr' : 'cr'}">${t.cat === 'toson' ? '+' : '−'}${rs(t.amount)}</b><div class="t2">${run >= 0 ? 'owes ' + rs(run) : 'Dad owes ' + rs(-run)}</div></div></div>`).join('') : emptyBox('👨‍👦', 'No transfers found yet', 'Import Dad’s PNB statement — transfers with ' + esc(sonName(sel).split(' ')[0]) + ' are picked up automatically.', '')}</div>
+  <div class="small muted mt">Names recognised in Dad’s statement: ${SONS.map(k => `<b>${esc(sonName(k))}</b>: ${esc((S.settings.sonsMatch || {})[k] || '')}`).join(' · ')} (plus your own account numbers). Paid to Dad through: <b>${esc(S.settings.dadVia || '—')}</b> (from your own accounts). <a href="#" data-act="sonNames">Edit</a></div>`;
 }
 function sonCashModal(k) {
   modal('＋ Cash / other entry', `<div class="frow"><div class="fld"><label>Son</label><select class="inp" id="sc_k">${SONS.map(x => `<option value="${x}" ${x === k ? 'selected' : ''}>${esc(sonName(x))}</option>`).join('')}</select></div>
@@ -4534,10 +4544,11 @@ Object.assign(ACT, {
   sonSel: el => { VIEW.sub.sonSel = el.dataset.k; VIEW.keepScroll = true; rerender(); },
   sonTag: el => { const t = P('parents').txns.find(x => x.id === el.dataset.id); if (t) { t.person = el.dataset.k; t.userSet = true; touch(t); save(); rerender(); } },
   sonCash: el => sonCashModal(el.dataset.k),
-  sonNames: () => modal('Names in Dad’s statement', SONS.map(k => `<div class="fld" style="margin-bottom:10px"><label>${esc(sonName(k))} — display name</label><input class="inp" data-sn="${k}" value="${esc(sonName(k))}"><label class="mt">Spellings to recognise (comma separated)</label><input class="inp" data-sm="${k}" value="${esc((S.settings.sonsMatch || {})[k] || '')}"></div>`).join('') + '<div class="small muted">After saving, tap “Re-categorise” in Dad’s account to apply to older entries.</div>', `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="sn_s">Save</button>`, { onMount: m => $('#sn_s', m).onclick = () => {
+  sonNames: () => modal('Names in Dad’s statement', SONS.map(k => `<div class="fld" style="margin-bottom:10px"><label>${esc(sonName(k))} — display name</label><input class="inp" data-sn="${k}" value="${esc(sonName(k))}"><label class="mt">Spellings to recognise (comma separated)</label><input class="inp" data-sm="${k}" value="${esc((S.settings.sonsMatch || {})[k] || '')}"></div>`).join('') + `<div class="fld" style="margin-bottom:10px"><label>People you pay so they give Dad cash (comma separated)</label><input class="inp" id="sn_via" value="${esc(S.settings.dadVia || '')}" placeholder="e.g. KHEM CHAND"><div class="small muted">Payments from your accounts to these names count as money you gave Dad.</div></div>` + '<div class="small muted">Older entries are updated when you save.</div>', `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="sn_s">Save</button>`, { onMount: m => $('#sn_s', m).onclick = () => {
     S.settings.sonNames = S.settings.sonNames || {}; S.settings.sonsMatch = S.settings.sonsMatch || {};
     $$('[data-sn]', m).forEach(i => { if (i.value.trim()) S.settings.sonNames[i.dataset.sn] = i.value.trim(); }); $$('[data-sm]', m).forEach(i => S.settings.sonsMatch[i.dataset.sm] = i.value.trim().toUpperCase());
-    const n = reclassify('parents'); save(); closeModal(); rerender(); toast('Saved · ' + n + ' entries updated');
+    S.settings.dadVia = $('#sn_via', m).value.trim().toUpperCase();
+    const n = reclassify('parents') + reclassify('me'); save(); closeModal(); rerender(); toast('Saved · ' + n + ' entries updated');
   } }),
 });
 // add the tab to Mom & Dad
