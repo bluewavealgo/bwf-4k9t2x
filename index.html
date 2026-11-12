@@ -932,9 +932,65 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   if (typeof module !== 'undefined') module.exports = api; else root.StmtParser = api;
 })(this);
 
+/* Credit-card statement parser (ICICI / Amazon Pay ICICI annual & monthly statements) — pdf.js text items. */
+(function (root) {
+  const MON = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+  const p2 = n => String(n).padStart(2, '0');
+  function pd(s) { s = String(s || '').trim(); let m;
+    if ((m = s.match(/^(\d{1,2})[-\s]([A-Za-z]{3})[-\s,]+(\d{2,4})$/)) && MON[m[2].toUpperCase()]) { let y = +m[3]; if (y < 100) y += 2000; return y + '-' + p2(MON[m[2].toUpperCase()]) + '-' + p2(+m[1]); }
+    if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) return m[3] + '-' + p2(+m[2]) + '-' + p2(+m[1]);
+    return null; }
+  const amtRe = /^-?[\d,]+\.\d{2}\s*(CR|Cr|DR|Dr)?$/;
+  const detect = text => /credit\s*card|card\s*account\s*no|card\s*number/i.test(text) && /transaction\s*details/i.test(text) && /amount\s*\(?\s*in/i.test(text);
+  function lines(items) { const L = []; items.filter(i => i.str && i.str.trim()).sort((a, b) => b.y - a.y || a.x - b.x).forEach(i => { let l = L.find(x => Math.abs(x.y - i.y) <= 2.5); if (!l) L.push(l = { y: i.y, items: [] }); l.items.push(i); }); L.forEach(l => l.items.sort((a, b) => a.x - b.x)); return L.sort((a, b) => b.y - a.y); }
+  function parseCard(pages) {
+    const all = pages.map(p => p.items.map(i => i.str).join(' ')).join(' \n ');
+    if (!detect(all)) return null;
+    const meta = { accType: 'Credit card', bank: /ICICI/i.test(all) ? 'ICICI' : /HDFC/i.test(all) ? 'HDFC' : /\bSBI\b|State Bank/i.test(all) ? 'SBI' : /AXIS/i.test(all) ? 'Axis' : '' , card: true };
+    const acc = all.match(/Card\s*Account\s*No\.?\s*:?\s*([\dX* ]{12,25}\d)/i) || all.match(/Card\s*Number\s*:?\s*(\d{4}[\dX* ]{8,18}\d{4})/i);
+    if (acc) meta.accountNo = acc[1].replace(/\s+/g, '');
+    const per = all.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*TO\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) || all.match(/Statement\s*period\s*:?\s*([A-Za-z]+\s*\d{1,2},?\s*\d{4})\s*to\s*([A-Za-z]+\s*\d{1,2},?\s*\d{4})/i);
+    meta.periods = per && pd(per[1]) && pd(per[2]) ? [[pd(per[1]), pd(per[2])]] : [];
+    const out = [], warnings = []; let H = null, cur = null;
+    const push = () => { if (!cur) return; if (cur.amount != null && cur.amount !== 0) out.push({ date: cur.date, desc: cur.desc.replace(/\s+/g, ' ').trim(), ref: cur.ref, amount: Math.abs(cur.amount), dir: cur.cr ? 'cr' : 'dr', balance: null, card: cur.card }); cur = null; };
+    let card = '';
+    pages.forEach(pg => {
+      lines(pg.items).forEach(L => {
+        const txt = L.items.map(i => i.str).join(' ');
+        const cn = txt.match(/Card\s*Number\s*:?\s*([\dX ]{12,25}\d)/i); if (cn) { push(); card = cn[1].replace(/\s+/g, '').slice(-4); return; }
+        const d = L.items.find(i => /^date$/i.test(i.str.trim())), td = L.items.find(i => /transaction\s*details/i.test(i.str)), am = L.items.find(i => /^amount/i.test(i.str.trim()));
+        if (d && td && am) { push(); H = { date: d.x, det: td.x - 50, amt: am.x }; return; }
+        if (!H) return;
+        if (/^\s*(transaction details|the category of service|registration|registered office|this is an authenticated|important messages|page \d+)/i.test(txt)) { push(); return; }
+        const dIt = L.items.find(i => i.x < H.det && pd(i.str));
+        const amts = L.items.filter(i => i.x > H.amt - 70 && amtRe.test(i.str.trim()));
+        const det = L.items.filter(i => i !== dIt && i.x >= H.det - 10 && i.x < H.amt - 120 && !amtRe.test(i.str.trim())).map(i => i.str.trim()).join(' ');
+        if (dIt) {
+          push();
+          const ref = L.items.filter(i => i !== dIt && i.x < H.det - 10 + 10 && /^\d{6,}$/.test(i.str.trim())).map(i => i.str.trim()).join('');
+          const a = amts.length ? amts[amts.length - 1].str.trim() : null;
+          let v = a ? parseFloat(a.replace(/[^\d.-]/g, '')) : null; const cr = a ? (/CR$/i.test(a) || v < 0) : false;
+          cur = { date: pd(dIt.str), desc: det, ref, amount: v, cr, card };
+        } else if (cur && det && !amts.length) cur.desc += ' ' + det;
+      });
+      push();
+    });
+    if (!out.length) warnings.push('No card transactions found');
+    const freq = {}; out.forEach(t => { if (t.card) freq[t.card] = (freq[t.card] || 0) + 1; }); const main = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+    const head = all.match(/(\d{4})\s*X{4}\s*X{4}\s*(\d{4})/); if (main) meta.accountNo = 'XXXXXXXXXXXX' + main[0]; else if (head) meta.accountNo = 'XXXXXXXXXXXX' + head[2];
+    return { meta, txns: out, warnings };
+  }
+  const api = { parseCard, detect };
+  if (typeof module !== 'undefined') module.exports = api; else {
+    root.CardParser = api;
+    // bank parser first; a credit-card statement (no balance column) falls through to this one
+    if (root.StmtParser) { const o = root.StmtParser.parseStatement; root.StmtParser.parseStatement = pages => { const r = o(pages); if (r.txns.length) return r; const c = parseCard(pages); return c && c.txns.length ? c : r; }; }
+  }
+})(this);
+
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.5';
+const APP_VER = '4.6';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1348,7 +1404,12 @@ function classify(t, profKey) {
   const isSelf = /SENTMONEYTOOWN|RECEIVEDMONEYFROMOWN|FORMUTUALFUND|SWEEPTRANSFER|OWNACCOUNT|^MB:INTERNAL$|^ACXFRFROMSOL/.test(c) || ownAccIn(prof, t) || (own && c.includes('FUNDTRANSFERFROM' + own)) || (own && /^MB:SENTNEFT|^IB:/.test(c) && c.includes(own));
   const first = own ? compact(st.ownerMatch.split(/\s+/)[0]) : '';
   const selfUpi = profKey === 'me' && t.mode === 'UPI' && first && [first, own].includes(compact(t.payee));
+  const cardAcc = (prof.accounts || []).some(a => a.id === t.account && a.type === 'Credit card'); let ccat = null;
+  if (cardAcc) { t.mode = 'Card';
+    if (t.dir === 'cr' && /PAYMENTRECEIVED|PAYMENTRECD|THANKYOU|AUTODEBIT|BBPS|NETBANKINGPAYMENT|UPIPAYMENT|CLICKTOPAY/.test(c)) ccat = 'cardpay';
+    else if (/AMORTIZATION/.test(c) && /INTEREST/.test(c) || /^(CGST|SGST|IGST)|GST-CI|LATEPAYMENTFEE|FINANCECHARGE|ANNUALFEE|FUELSURCHARGE|OVERLIMIT|^\d+EMIAMAZON|PROCESSINGFEE|MARKUP/.test(c)) ccat = t.dir === 'dr' ? 'charges' : 'refund'; }
   if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
+  else if (ccat) { out.cat = ccat; out.conf = 'h'; }
   else if ((isSelf || selfUpi) && profKey === 'me') { out.cat = 'self'; out.conf = 'h'; }
   else if (profKey === 'me' && listOf(st.dadMatch || 'THAKUR LAL').some(w => w.length >= 4 && c.includes(w))) { out.cat = t.dir === 'dr' ? 'todad' : 'fromdad'; out.person = 'ritesh'; out.conf = 'h'; }
   else if (profKey === 'me' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
@@ -2102,7 +2163,7 @@ function importPreview() {
   const n = I.rows.length, dups = I.rows.filter(r => r.dup === 'sure').length, maybes = I.rows.filter(r => r.dup === 'maybe').length;
   const dates = I.rows.map(r => r.date).sort();
   const balOk = !I.warnings.some(w => /balance/.test(w));
-  const body = `<div class="grid g4" style="margin-bottom:12px">${kpi('Bank', esc(I.meta.bank || '—') + (I.meta.accType ? ' · ' + I.meta.accType : ''), I.meta.accountNo ? 'A/c ··' + esc(last4) : 'Account no. not found')}${kpi('Period', fmtDateShort(dates[0]) + ' → ' + fmtDateShort(dates[dates.length - 1]), dates[0].slice(0, 4) === dates[dates.length - 1].slice(0, 4) ? dates[0].slice(0, 4) : '')}${kpi('Entries', n, dups || maybes ? `${dups ? dups + ' already saved' : ''}${dups && maybes ? ' · ' : ''}${maybes ? maybes + ' to check' : ''}` : 'all new', maybes ? 'amb' : '')}${kpi('Balance check', balOk ? '✓ Matches' : '⚠ Check', balOk ? 'Every row adds up to the printed balance' : I.warnings.length + ' warnings', balOk ? 'grn' : 'amb')}</div>
+  const body = `<div class="grid g4" style="margin-bottom:12px">${kpi('Bank', esc(I.meta.bank || '—') + (I.meta.accType ? ' · ' + I.meta.accType : ''), I.meta.accountNo ? 'A/c ··' + esc(last4) : 'Account no. not found')}${kpi('Period', fmtDateShort(dates[0]) + ' → ' + fmtDateShort(dates[dates.length - 1]), dates[0].slice(0, 4) === dates[dates.length - 1].slice(0, 4) ? dates[0].slice(0, 4) : '')}${kpi('Entries', n, dups || maybes ? `${dups ? dups + ' already saved' : ''}${dups && maybes ? ' · ' : ''}${maybes ? maybes + ' to check' : ''}` : 'all new', maybes ? 'amb' : '')}${I.meta.card ? kpi('Card statement', '💳 ' + I.txns.length, 'spends, EMIs, fees and payments — no running balance on card statements', 'vio') : kpi('Balance check', balOk ? '✓ Matches' : '⚠ Check', balOk ? 'Every row adds up to the printed balance' : I.warnings.length + ' warnings', balOk ? 'grn' : 'amb')}</div>
   ${dups || maybes ? `<div class="alert ${maybes ? 'amb' : 'acc'}">🔍 <div><b>Duplicate check:</b> ${dups ? `${dups} entr${dups === 1 ? 'y is' : 'ies are'} already saved and will be skipped. ` : ''}${maybes ? `${maybes} look${maybes === 1 ? 's' : ''} like possible duplicates — check the yellow rows (shown first) and choose what to do.` : ''}</div></div>` : ''}
   ${!I.accId ? '<div class="alert amb">🏦 <div>Which account is this? Pick it below — the app remembers it for next time.</div></div>' : ''}
   <div class="frow"><div class="fld"><label>Import into account</label><select class="inp" id="ip_acc">${accOptions(I.profKey, I.accId)}<option value="__new">＋ New account…</option></select></div>
@@ -5700,6 +5761,7 @@ const PM = [['net', '🌐', 'Net banking'], ['atm', '🏧', 'ATM / cash'], ['upi
 const PM_COL = { net: '#3b82f6', atm: '#f59e0b', upi: '#8b5cf6', card: '#ec4899', auto: '#14b8a6', chq: '#64748b', bank: '#22c55e', other: '#94a3b8' };
 function payMethod(t) {
   const c = compact(t.desc || ''), m = t.mode || '';
+  if (PROFS.some(k => (P(k).accounts || []).some(a => a.id === t.account && a.type === 'Credit card'))) return 'card';
   if (t.source === 'upi' || m === 'UPI' || /^UPI|UPI\//.test(c)) return 'upi';
   if (/^AT[LW]\/|ATMWDL|ATM-?WDL|^ATM|CASHWDL|CSHWDL|CASHDEP|BYCASH|CASHDEPOSIT|^CDM|CASHWITHDRAWAL|^CASH$/.test(c) || m === 'ATM') return 'atm';
   if (/^PC[DI]\/|^POS|ECOMPUR|^ECOM|^VISA|RUPAY|BRN-PYMT-CARD|DEBITCARD|^VPS|^IPS\//.test(c) || m === 'Card') return 'card';
