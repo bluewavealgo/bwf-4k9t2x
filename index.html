@@ -559,6 +559,9 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
 .flowb.grn{--fc:#10b981}.flowb.vio{--fc:#8b5cf6}.flowb.acc{--fc:#3b82f6}.flowb.red{--fc:#ef4444}
 @media(max-width:700px){.flowrow>i{display:none}.flowb{min-width:calc(50% - 8px)}}
 .sbar{display:flex;height:14px;border-radius:8px;overflow:hidden;background:var(--line,#334155)}.sbar i{display:block;height:100%}
+.fsbar{position:sticky;bottom:calc(env(safe-area-inset-bottom) + 12px);z-index:30;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:12px 14px;border-radius:16px;background:var(--bg);border:1px solid var(--acc,#3b82f6);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+@media(max-width:700px){.fsbar{bottom:calc(env(safe-area-inset-bottom) + 84px)}}
+tr.on td{background:color-mix(in srgb,var(--acc,#3b82f6) 12%,transparent)}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -894,7 +897,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.1';
+const APP_VER = '4.2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -5480,6 +5483,79 @@ Object.assign(CHANGE, {
   taxFy: el => { VIEW.sub.taxFy = +el.value; rerender(); },
 });
 document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.act === 'rdQ') { clearTimeout(RD.q); RD.q = setTimeout(() => { VIEW.sub['q_' + el.dataset.k] = el.value; VIEW.keepScroll = true; rerender(); const i = $(`[data-act=rdQ][data-k="${el.dataset.k}"]`); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); } });
+
+/* ---------------- Friends → possible friend transfers: search, tick boxes, link many to one person, undo / restore ---------------- */
+const MERCHANT_RE = /RAILWAY|IRCTC|CONNECT|BHARAT|INSURANCE|POWER|ELECTRIC|ENTERPRISE|TRADER|SERVICE|INDIA|MEDIC|HOSPITAL|PHARMA|CHEMIST|HOTEL|RESTAURANT|CAFE|FOOD|GAS\b|PETROL|MOTORS|AGENC|CENTRE|CENTER|COLLECTION|SOLUTION|TECH|FASHION|JEWEL|BAZAAR|SUPER|MEGA|MALL|TRAVEL|TOURS|DIGITAL|ONLINE|PAYMENT|\bPAY\b|CORP|COMPANY|INFRA|CLINIC|\bLAB|STUDIO|SALON|PARLOUR|DAIRY|SWEETS|KIRANA|GENERAL|AUTO\b|GARAGE|CABLE|BROADBAND|FIBER|TELECOM|RECHARGE|BILL|MUNICIPAL|NIGAM|LIMITED|LTD|PVT|STORE|SHOP|MART|BANK/i;
+RD.fsel = RD.fsel || new Set();
+const friendCands = (all) => live(P('me').txns).filter(t => looksLikePerson(t) && !MERCHANT_RE.test(t.payee || '') && (all || !t.notFriend)).sort((a, b) => b.date.localeCompare(a.date));
+function showUndo(msg, fn) {
+  $$('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast upd'; t.innerHTML = `${esc(msg)} · <b style="text-decoration:underline">Undo</b>`;
+  t.onclick = () => { fn(); t.remove(); }; document.body.appendChild(t); setTimeout(() => t.remove(), 7000);
+}
+function linkToFriend(list, who, typeOf) {
+  const me = P('me'); let f;
+  if (who === '__new') { const nm = prompt('Friend’s name:', titleCase(list[0].payee || '')); if (!nm) return null; f = touch({ id: uid(), name: nm.trim(), aliases: [], entries: [] }); me.friends.push(f); }
+  else f = me.friends.find(x => x.id === who); if (!f) return null;
+  list.forEach(t => { if (t.payee && !(f.aliases || []).some(a => compact(a) === compact(t.payee))) f.aliases = [...(f.aliases || []), t.payee];
+    t.cat = 'friend'; t.friendId = f.id; t.reviewed = true; touch(t); addFriendEntryFromTxn(f, t, typeOf(t)); });
+  touch(f); return f;
+}
+function friendSuggHtml() {
+  const fr = live(P('me').friends), q = (VIEW.sub.fsQ || '').toLowerCase().trim();
+  const all = friendCands(false), list = all.filter(t => !q || (maskWife(t.payee || '') + ' ' + maskWife(t.desc) + ' ' + t.amount + ' ' + fmtDate(t.date) + ' ' + (t.mode || '')).toLowerCase().includes(q));
+  const hidden = friendCands(true).filter(t => t.notFriend);
+  [...RD.fsel].forEach(id => { if (!list.some(t => t.id === id)) RD.fsel.delete(id); });
+  const sel = list.filter(t => RD.fsel.has(t.id)), lim2 = VIEW.sub.fsLim || 80;
+  const out = list.filter(t => t.dir === 'dr'), inn = list.filter(t => t.dir === 'cr');
+  const typeOpts = (t, v) => Object.entries(FTYPES).filter(([k]) => t.dir === 'dr' ? ['lent', 'returned'].includes(k) : ['recvback', 'borrowed'].includes(k)).map(([k, x]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${x[0]}</option>`).join('');
+  const whoOpts = nm => `<option value="">Choose…</option>${fr.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')}<option value="__new">＋ New friend${nm ? ' “' + esc(nm) + '”' : '…'}</option>`;
+  if (!all.length && !hidden.length) return '';
+  return `<div class="sec">Possible friend transfers <span class="muted small" style="text-transform:none;letter-spacing:0">— transfers to/from people found in your statements</span></div>
+  <input class="inp srch" placeholder="🔎  Search name, word, amount or date (e.g. Thakur, Prabha, 1500)…" value="${esc(VIEW.sub.fsQ || '')}" data-act="fsQ">
+  <div class="flex small" style="margin:6px 2px 8px;flex-wrap:wrap;gap:10px"><label class="chk" style="margin:0"><input type="checkbox" id="fs_all" ${list.length && sel.length === Math.min(list.length, lim2) ? 'checked' : ''}> Select all${q ? ' found' : ''}</label><span class="muted">${list.length} found · sent <b class="dr">${rs(sumAmt(out))}</b> · received <b class="cr">${rs(sumAmt(inn))}</b></span><span class="sp"></span>${hidden.length ? `<a href="#" data-act="fsHid">👁 ${VIEW.sub.fsHid ? 'Hide' : 'Show'} hidden (${hidden.length})</a>` : ''}</div>
+  ${list.length ? `<div class="tblw"><table class="t"><thead><tr><th></th><th>Date</th><th>Person (as in bank)</th><th class="ra">Amount</th><th>Link to</th><th>Type</th><th></th></tr></thead><tbody>
+  ${list.slice(0, lim2).map(t => `<tr data-row="${t.id}" class="${RD.fsel.has(t.id) ? 'on' : ''}"><td><input type="checkbox" data-fsel="${t.id}" ${RD.fsel.has(t.id) ? 'checked' : ''}></td><td class="num">${fmtDate(t.date)}</td><td><div class="b">${esc(maskWife(t.payee))}</div><div class="muted small">${esc(t.mode)}</div></td><td class="ra">${amtCell(t)}</td>
+  <td><select class="inp" data-fs="who">${whoOpts(maskWife(t.payee))}</select></td><td><select class="inp" data-fs="type" data-id="${t.id}">${typeOpts(t, RD['ty_' + t.id])}</select></td>
+  <td class="ra" style="white-space:nowrap"><button class="btn sm pri" data-act="friendLink" data-id="${t.id}">Link</button> <button class="btn sm ghost" data-act="notFriend" data-id="${t.id}">Not a friend</button></td></tr>`).join('')}
+  </tbody></table></div>${list.length > lim2 ? `<div style="text-align:center;padding:10px"><button class="btn sm" data-act="fsMore">Show more (${list.length - lim2} left)</button></div>` : ''}` : `<div class="card">${emptyBox('🔎', 'Nothing matches', 'Try another name or word.', '')}</div>`}
+  ${sel.length ? `<style>.efab{display:none}</style><div class="fsbar"><b>${sel.length} selected</b> <span class="muted small">${rs(sumAmt(sel.filter(t => t.dir === 'dr')))} out · ${rs(sumAmt(sel.filter(t => t.dir === 'cr')))} in</span><span class="sp"></span><select class="inp" id="fs_who" style="width:auto;max-width:220px">${whoOpts(sel.length && new Set(sel.map(t => compact(t.payee))).size === 1 ? maskWife(sel[0].payee) : '')}</select><button class="btn pri" data-act="fsLinkSel">Link to this person</button><button class="btn ghost" data-act="fsHideSel">Not a friend</button><button class="btn ghost" data-act="fsClear">✕</button></div>` : ''}
+  ${VIEW.sub.fsHid && hidden.length ? `<div class="sec">Hidden (marked “not a friend”)</div><div class="card" style="padding:4px 12px">${hidden.map(t => `<div class="txc"><span class="itile" style="--ic:#94a3b8">🙈</span><div class="mid"><div class="t1">${esc(maskWife(t.payee))}</div><div class="t2">${fmtDate(t.date)} · ${esc(t.mode || '')}</div></div><div class="r">${amtCell(t)}<div><button class="btn sm" data-act="fsRestore" data-id="${t.id}">Restore</button></div></div></div>`).join('')}</div>` : ''}`;
+}
+const _friendsV = VIEWS.friends;
+VIEWS.friends = () => {
+  let h = _friendsV();
+  const a = h.indexOf('<div class="sec">Possible friend transfers');
+  if (a >= 0) { const b = h.indexOf('</tbody></table></div>', a); if (b > a) h = h.slice(0, a) + h.slice(b + '</tbody></table></div>'.length); }
+  const fab = h.lastIndexOf('<button class="efab"');
+  return fab > 0 ? h.slice(0, fab) + friendSuggHtml() + h.slice(fab) : h + friendSuggHtml();
+};
+const _friendLink = ACT.friendLink;
+Object.assign(ACT, {
+  friendLink: el => { const tr = el.closest('tr'), t = P('me').txns.find(x => x.id === el.dataset.id), who = $('[data-fs=who]', tr).value, type = $('[data-fs=type]', tr).value;
+    if (!who) { toast('Choose a friend'); return; } const f = linkToFriend([t], who, () => type); if (!f) return; RD.fsel.delete(t.id); save(); VIEW.keepScroll = true; rerender(); toast('Linked to ' + f.name); },
+  notFriend: el => { const t = P('me').txns.find(x => x.id === el.dataset.id); if (!t) return; t.notFriend = true; touch(t); RD.fsel.delete(t.id); save(); VIEW.keepScroll = true; rerender();
+    showUndo('Hidden: ' + maskWife(t.payee || ''), () => { t.notFriend = false; touch(t); save(); VIEW.keepScroll = true; rerender(); }); },
+  fsLinkSel: () => { const who = ($('#fs_who') || {}).value; if (!who) { toast('Choose who to link them to'); return; }
+    const list = [...RD.fsel].map(id => P('me').txns.find(x => x.id === id)).filter(Boolean);
+    const f = linkToFriend(list, who, t => RD['ty_' + t.id] || (t.dir === 'dr' ? 'lent' : 'borrowed')); if (!f) return;
+    RD.fsel.clear(); save(); VIEW.keepScroll = true; rerender(); toast(list.length + ' linked to ' + f.name); },
+  fsHideSel: () => { const list = [...RD.fsel].map(id => P('me').txns.find(x => x.id === id)).filter(Boolean); if (!list.length) return;
+    confirmBox('Hide ' + list.length + ' as “not a friend”?', 'They stay in your transactions — only this list hides them. You can restore them from “Show hidden”.', 'Hide', () => {
+      list.forEach(t => { t.notFriend = true; touch(t); }); RD.fsel.clear(); save(); VIEW.keepScroll = true; rerender();
+      showUndo(list.length + ' hidden', () => { list.forEach(t => { t.notFriend = false; touch(t); }); save(); VIEW.keepScroll = true; rerender(); }); }); },
+  fsClear: () => { RD.fsel.clear(); VIEW.keepScroll = true; rerender(); },
+  fsHid: () => { VIEW.sub.fsHid = !VIEW.sub.fsHid; VIEW.keepScroll = true; rerender(); },
+  fsRestore: el => { const t = P('me').txns.find(x => x.id === el.dataset.id); if (t) { t.notFriend = false; touch(t); save(); VIEW.keepScroll = true; rerender(); toast('Restored'); } },
+  fsMore: () => { VIEW.sub.fsLim = (VIEW.sub.fsLim || 80) + 200; VIEW.keepScroll = true; rerender(); },
+});
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset && el.dataset.fsel) { if (el.checked) RD.fsel.add(el.dataset.fsel); else RD.fsel.delete(el.dataset.fsel); VIEW.keepScroll = true; rerender(); }
+  else if (el.id === 'fs_all') { const q = (VIEW.sub.fsQ || '').toLowerCase().trim(); const list = friendCands(false).filter(t => !q || (maskWife(t.payee || '') + ' ' + maskWife(t.desc) + ' ' + t.amount + ' ' + fmtDate(t.date) + ' ' + (t.mode || '')).toLowerCase().includes(q)).slice(0, VIEW.sub.fsLim || 80);
+    if (el.checked) list.forEach(t => RD.fsel.add(t.id)); else RD.fsel.clear(); VIEW.keepScroll = true; rerender(); }
+  else if (el.dataset && el.dataset.fs === 'type' && el.dataset.id) RD['ty_' + el.dataset.id] = el.value;
+});
+document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.act === 'fsQ') { clearTimeout(RD.fq); RD.fq = setTimeout(() => { VIEW.sub.fsQ = el.value; VIEW.keepScroll = true; rerender(); const i = $('[data-act=fsQ]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 300); } });
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
