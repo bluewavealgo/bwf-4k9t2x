@@ -651,7 +651,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (s == null) return null;
     s = String(s).trim();
     if (!s || s === '-') return null;
-    const m = s.replace(/₹|INR|Rs\.?/gi, '').match(/^([+-])?\s*([\d,]+\.?\d*)\s*(\((Dr|Cr)\)|Dr|Cr)?\.?$/i);
+    const m = s.replace(/₹|INR|Rs\.?/gi, '').match(/^([+-])?\s*(\d[\d,]*\.?\d*|\.\d+)\s*(\((Dr|Cr)\)|Dr|Cr)?\.?$/i);
     if (!m || !/\d/.test(m[2])) return null;
     const v = parseFloat(m[2].replace(/,/g, ''));
     if (isNaN(v)) return null;
@@ -660,7 +660,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   const HDR = {
-    date: [/^(txn\.?\s*|transaction\s*|value\s*|post\s*)?date$/i, /^transaction$/i],
+    date: [/^(txn\.?\s*|tran\.?\s*|transaction\s*|value\s*|post\s*)?date$/i, /^transaction$/i],
     narr: [/^(narration|description|particulars|details|transaction details|remarks)$/i],
     ref: [/chq|cheque|ref/i],
     dr: [/^withdrawal/i, /^debit/i, /^withdrawals/i, /^dr\.?\s*(amount|amt)/i],
@@ -691,13 +691,29 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         const dr = find('dr'), cr = find('cr'), amt = find('amt');
         const ref = cand.find(it => HDR.ref.some(r => r.test(it.str)) && it !== narr);
         const yMin = Math.min(...cand.map(c => c.y));
-        return { date, narr, ref, dr, cr, amt, bal, yMin,
+        const after = cand.find(it => it.x > bal.x + 25 && /^(init|br\b|branch)/i.test(it.str.trim()));
+        return { date, narr, ref, dr, cr, amt, bal, yMin, after,
           combined: !!(dr && cr && Math.abs(dr.x - cr.x) < 12) };
       }
     }
     return null;
   }
 
+  function synthHeader(lines) {
+    const balIt = lines.flatMap(l => l.items).find(i => /^balance$/i.test(i.str.trim())); if (!balIt) return null;
+    for (const L of lines) {
+      if (L.y >= balIt.y) continue;
+      const d = L.items.filter(i => parseDate(i.str)); if (!d.length || d[0].x > 120) continue;
+      const lastD = d[d.length - 1], rest = L.items.filter(i => i.x > lastD.x + 5);
+      const narr = rest.find(i => !parseAmt(i.str) && i.str.trim() !== '-'); if (!narr) continue;
+      const cols = rest.filter(i => i.x > narr.x + 60 && (parseAmt(i.str) || i.str.trim() === '-')); if (cols.length < 3) continue;
+      const bal = cols[cols.length - 1], cr = cols[cols.length - 2], dr = cols[cols.length - 3], ref = cols.length >= 4 ? cols[cols.length - 4] : null;
+      if (Math.abs(bal.x + (bal.w || 0) - (balIt.x + (balIt.w || 0))) > 40) continue;
+      return { date: d[0], narr: { x: narr.x, str: '' }, ref: ref ? { x: ref.x, str: '' } : undefined, dr: { x: dr.x - 25, str: '' }, cr: { x: cr.x - 25, str: '' }, bal: { x: balIt.x - 2, str: '' }, yMin: balIt.y - 1, combined: false, synth: true };
+    }
+    return null;
+  }
+  const IFSC_BANK = { KKBK: 'Kotak', SBIN: 'SBI', PUNB: 'PNB', UTIB: 'Axis', HDFC: 'HDFC', ICIC: 'ICICI', BARB: 'Bank of Baroda', CNRB: 'Canara', UBIN: 'Union Bank', IDIB: 'Indian Bank', YESB: 'Yes Bank', IDFB: 'IDFC First' };
   function statementMeta(text) {
     const meta = {};
     const acc = text.match(/Account\s*(?:No|Number|#)\.?\s*:?\s*([0-9X*x]{6,})/i) || text.match(/For\s*Account\s*:?\s*(\d{9,18})/i);
@@ -708,6 +724,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     else if (/state bank of india|\bSBI\b/i.test(text)) meta.bank = 'SBI';
     else if (/punjab national bank|\bPNB\b|\bPUNB0/i.test(text)) meta.bank = 'PNB';
     else if (/axis bank/i.test(text)) meta.bank = 'Axis';
+    const od = text.match(/(?:Account|A\/c)\s*Open(?:ing)?\s*Date\s*:?\s*(\d{1,2}[-\/.](?:\d{1,2}|[A-Za-z]{3})[-\/.]\d{2,4})/i); if (od) meta.openDate = parseDate(od[1].replace(/[.]/g, '-'));
     const ob = text.match(/Opening\s*Balance(?:\s*as\s*on\s*[\d\/.-]+)?\s*:?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i);
     if (ob) meta.opening = parseFloat(ob[1].replace(/,/g, ''));
     const cb = text.match(/Closing\s*Balance(?:\s*as\s*on\s*[\d\/.-]+)?\s*:?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i);
@@ -720,7 +737,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const DT = '(\\d{1,2}[-\\/ ](?:[A-Za-z]{3,9}|\\d{1,2})[-\\/ ,]+\\d{4})';
     const out = [], seen = new Set();
     const add = (a, b) => { const f = parseDate(a.replace(/\s+/g, ' ')), t = parseDate(b.replace(/\s+/g, ' ')); if (f && t && f <= t && !seen.has(f + t)) { seen.add(f + t); out.push([f, t]); } };
-    let m; const re1 = new RegExp('period\\s*:?\\s*(?:from\\s*)?' + DT + '\\s*(?:to|-|–)\\s*' + DT, 'gi');
+    let m; const re1 = new RegExp('period\\s*:?\\s*\\(?\\s*(?:from\\s*:?\\s*)?' + DT + '\\s*(?:to|-|–)\\s*:?\\s*' + DT, 'gi');
     while ((m = re1.exec(all))) add(m[1], m[2]);
     if (!out.length) {
       const re2 = new RegExp('(?:from\\s*)?' + DT + '\\s*(?:to|-|–)\\s*' + DT, 'gi'); let best = null;
@@ -735,12 +752,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const allText = pages.map(p => p.items.map(i => i.str).join(' ')).join(' \n ');
     const meta = statementMeta(allText);
     meta.periods = statementPeriods(allText, pages[0] ? pages[0].items.map(i => i.str).join(' ') : '');
+    { const f = pages[0] ? pages[0].items.map(i => i.str).join(' ') : ''; const m = f.match(/IFSC\s*(?:Code)?\s*:?\s*([A-Z]{4})0[A-Z0-9]{6}/i); if (m && IFSC_BANK[m[1].toUpperCase()]) meta.bank = IFSC_BANK[m[1].toUpperCase()]; }
+    if (!meta.openDate && pages[0]) { const L = groupLines(pages[0].items.filter(i => i.str.trim())).find(l => l.items.some(i => /open(ing)?\s*date/i.test(i.str))); const v = L && L.items.find(i => parseDate(i.str.trim().replace(/^:\s*/, ''))); if (v) meta.openDate = parseDate(v.str.trim().replace(/^:\s*/, '')); }
     if (!meta.accountNo && pages[0]) { const L = groupLines(pages[0].items.filter(i => i.str.trim())).find(l => l.items.some(i => /account\s*(no|number|#)/i.test(i.str))); const v = L && L.items.find(i => /^\d{9,18}$/.test(i.str.trim())); if (v) meta.accountNo = v.str.trim(); }
     let H = null, rows = [], cur = null, opening = null, done = false, paused = false;
     for (const pg of pages) {
       if (done) break;
       const lines = groupLines(pg.items.filter(i => i.str.trim())).filter(L => !/^\s*page\s*no\.?\s*\d*\s*-?\s*$/i.test(L.items.map(i => i.str).join(' ')));
-      const h = findHeader(lines);
+      const h = findHeader(lines) || (!H ? synthHeader(lines) : null);
       if (h) { H = h; paused = false; }
       if (!H || paused) continue;
       const startY = h ? h.yMin - 1 : Infinity;
@@ -771,12 +790,27 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         });
         buckets.forEach(b => b.items.sort((a, c) => c.ly - a.ly || a.x - c.x));
         plines = [...buckets.values(), ...rest].sort((a, b) => b.y - a.y);
+      } else if (!narrRight && dLines.length >= 3 && (() => {
+        const textOnly = L => !L.items.some(isDateIt) && !L.items.some(isAmtCol) && !isSum(L) && L.items.some(it => it.x > H.date.x + 30 && it.x < amtStart);
+        let above = 0, below = 0;
+        dLines.forEach(D => { if (plines.some(L => L !== D && textOnly(L) && L.y - D.y > 2 && L.y - D.y <= 12)) above++; if (plines.some(L => L !== D && textOnly(L) && D.y - L.y > 2 && D.y - L.y <= 12)) below++; });
+        return above > dLines.length * 0.6 && above > below * 2;
+      })()) {
+        const anchors = dLines.map(L => L.y), buckets = new Map(anchors.map(y => [y, { y, items: [] }])), rest = [];
+        plines.forEach(L => {
+          // the row's text starts above its date and ends on the date line → belongs to the closest date at/below it
+          let best = null; anchors.forEach(a => { if (a <= L.y + 2 && (best == null || a > best)) best = a; });
+          if (best != null && L.y - best <= 40 && !isSum(L) && !/statement summary|end of statement|account summary|transaction total/i.test(L.items.map(i => i.str).join(' '))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
+          else rest.push(L);
+        });
+        buckets.forEach(b => { b.items.sort((a, c) => c.ly - a.ly || a.x - c.x); b.smart = true; });
+        plines = [...buckets.values(), ...rest].sort((a, b) => b.y - a.y);
       } else if (dLines.length && balNoDate > dLines.length / 2) {
         const anchors = dLines.map(L => L.y), buckets = new Map(anchors.map(y => [y, { y, items: [] }])), rest = [];
         plines.forEach(L => {
           // a row's text starts a few points above its date and runs downward → belongs to the lowest date at/just below its first line
           let best = null; anchors.forEach(a => { if (a >= L.y - 8 && (best == null || a < best)) best = a; });
-          if (best != null && best - L.y <= 60 && !isSum(L) && !/statement summary|end of statement|account summary/i.test(L.items.map(i => i.str).join(' '))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
+          if (best != null && best - L.y <= 60 && !isSum(L) && !/statement summary|end of statement|account summary|transaction total/i.test(L.items.map(i => i.str).join(' '))) buckets.get(best).items.push(...L.items.map(it => ({ ...it, ly: L.y })));
           else rest.push(L);
         });
         buckets.forEach(b => { b.items.sort((a, c) => c.ly - a.ly || a.x - c.x); b.smart = true; });
@@ -788,10 +822,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         const nx = L.items.filter(it => it.x > d.x + (d.w || 30) && !parseDate(it.str) && !isTime(it.str) && !isAmtCol(it) && !/^\d{1,4}$/.test(it.str.trim())).map(it => it.x);
         if (nx.length) { const m = Math.min(...nx) - 2; if (m < xNarr && m > d.x + (d.w || 30) - 4) xNarr = m; } });
       if (narrRight) xNarr = H.ref ? Math.min(H.ref.x - 9, xNarr) : Math.min(amtStart, xNarr);
-      const xRef = narrRight ? amtStart : H.ref ? H.ref.x - 9 : Infinity;
+      const refBefore = !narrRight && H.ref && H.ref.x < H.narr.x - 20;   // cheque-no column printed before the narration (Axis)
+      const xRef = narrRight || refBefore ? amtStart : H.ref ? H.ref.x - 9 : Infinity;
       const refLike = s => /^([A-Z]{1,6}-|[A-Z]{0,6}-?\d{4,})$/.test(s.trim());
       const col = it => {
         const right = it.x + (it.w || 0), s = it.str.trim();
+        if (H.after && it.x >= H.after.x - 4) return 'other';
         if (narrRight) { if (it.x >= narrStart) return /^(\\+|-)$/.test(s) ? 'other' : 'narr'; if (it.x >= xNarr && it.x < amtStart && !isAmtCol(it)) return 'ref'; }
         if (it.x >= amtStart - 2 && /^(dr|cr)$/i.test(s)) return right > H.bal.x + 4 ? 'bside' : 'side';
         if (isAmtCol(it)) {
@@ -800,15 +836,16 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           if (H.cr && H.dr) return right > H.cr.x + 4 ? 'cr' : 'dr';
           return 'amt';
         }
-        if (it.x < xNarr) return parseDate(s) ? 'date' : 'idx';
+        if (it.x < xNarr) return parseDate(s) ? 'date' : (refBefore && it.x >= H.ref.x - 9 ? 'ref' : 'idx');
         if (it.x < xRef) return (H.ref && it.x >= H.ref.x - 25 && refLike(s)) ? 'ref' : 'narr';
         if (it.x < amtStart) return 'ref';
         return 'other';
       };
       for (const L of plines) {
         const txt = L.items.map(i => i.str).join(' ');
+        if (/^\s*(WDL|DEP)\s+(TFR|CLG|CASH|TRANSFER)\s*$/i.test(txt)) continue;   // SBI prints the entry type on its own line above
         if (/closing balance/i.test(txt)) { paused = true; break; }   // end of this section; monthly statements may follow with a new header
-        if (/statement summary|end of statement|account summary|^\s*total\b/i.test(txt)) { done = true; break; }
+        if (/statement summary|end of statement|account summary|^\s*total\b|^\s*transaction total\b/i.test(txt)) { done = true; break; }
         if (/customer contact cent|you may call|write to us|statement generated on|page \d+ of\b|^\s*page \d+\s*$/i.test(txt)) continue;
         const cells = { date: [], narr: [], ref: [], dr: [], cr: [], amt: [], bal: [], idx: [], other: [], side: [], bside: [] };
         L.items.forEach(it => { if (!isTime(it.str) || it.x >= amtStart) cells[col(it)].push(it.str.trim()); });
@@ -857,7 +894,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (bal) prev = bal.v * (bal.side === 'dr' ? -1 : 1);
       if (amount == null || !r.date) { warnings.push('Skipped unreadable row near ' + (r.date || '?')); return; }
       if (!dir) { dir = 'dr'; warnings.push('Row ' + (i + 1) + ': direction guessed'); }
-      out.push({ date: r.date, desc: (r.nr ? r.narr.replace(/\\/g, ' ') : r.narr).replace(/\s+/g, ' ').trim(), ref: r.ref.replace(/\s+/g, ''),
+      out.push({ date: r.date, desc: (r.nr ? r.narr.replace(/\\/g, ' ') : r.narr).replace(/\s+/g, ' ').trim().replace(/\s+\d{10,}\s+AT\s+\d{3,6}(\s+[A-Z][A-Z .&-]*)?$/, ''), ref: r.ref.replace(/\s+/g, ''),
         amount, dir, balance: bal ? bal.v : null });
     });
     // keep printed period(s) only if they actually contain the entries (guards against picking e.g. an interest period)
@@ -897,7 +934,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.2';
+const APP_VER = '4.3';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1005,7 +1042,7 @@ const RULES_DR = [
   ['nps', /NPSTRUST|PFRDA|PROTEANCRA|NSDLNPS|^NPS|\/NPS/],
   ['fd', /FDBOOKED|FIXEDDEPOSIT|RDINSTAL|RECURRINGDEP|^RD\//],
   ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|^MUTUALFUND$|CAMS|KFINTECH|NJINDIA/],
-  ['rent', /VILASBABAR|BABARVILAS|VILASB\/|VILASBABA/],
+  ['rent', /VILASBABAR|BABARVILAS|VILASB\/|VILASBABA|VILASVBABA|VILASVISHWANATH|VILASVI\/SBIN/],
   ['gold', /SAFEGOLD|AUGMONT|MMTCPAMP|DIGIGOLD|DIGITALGOLD|GOLDPURCHASE/],
   ['crypto', /DELTAEX|DELTAEXCHANGE/],
   ['trading', /ZERODHA|UPSTOX|ANGELONE|ANGELBROKING|GROWW|DHAN|FLATTRADE|5PAISA|FYERS|FINVASIA|SHOONYA/],
@@ -1094,6 +1131,7 @@ function modeOf(d) {
 function payeeOf(d) {
   const s = d.replace(/\s+/g, ' ').trim();
   let m;
+  if (/^UPI\/(DR|CR|P2M|P2A|P2P|MB)\/\d/i.test(s)) { const p = s.split('/'); return (p[3] || '').trim(); }   // SBI / Axis: UPI/DR/<ref>/<name>/…
   if (/^UPI\//i.test(s)) { const p = s.split('/'); return (p[1] || '').trim(); }
   if ((m = s.match(/^PC[DI]\/\d+\/([^/]+)/i))) return m[1].replace(/\d{6}.*$/, '').trim();
   if (/^AT[LW]\//i.test(s)) return 'ATM withdrawal';
@@ -2068,6 +2106,7 @@ function importRows(I, link) {
   const acc = prof.accounts.find(a => a.id === I.accId);
   const last4 = (I.meta.accountNo || '').replace(/\D/g, '').slice(-4);
   if (link && last4 && acc) { acc.last4 = last4; if (I.meta.accType && !acc.type) acc.type = I.meta.accType; touch(acc); }
+  if (acc && I.meta.openDate) { const y = fyNum(I.meta.openDate); if (!acc.stmtFrom || acc.stmtFrom < y) { acc.stmtFrom = y; acc.openDate = I.meta.openDate; touch(acc); } }
   // remember which period this statement covered (Statements tab)
   if (acc && I.rows && I.rows.length) {
     const ds = I.rows.map(r => r.date).sort(), pers = (I.meta.periods && I.meta.periods.length) ? I.meta.periods : [[ds[0], ds[ds.length - 1]]];
