@@ -1053,7 +1053,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.10';
+const APP_VER = '4.11';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -6835,6 +6835,74 @@ function foldInfo(root) {
   });
 }
 { const _r2 = render; render = function () { _r2.apply(this, arguments); try { foldInfo($('#content')); } catch (e) { } }; }
+
+/* ============ v4.11 — Home as a one-page PDF snapshot ============ */
+function snapHtml() {
+  const me = P('me'), td = today(), hh = VIEW.sub.homeHH === '1', p = homePeriod(), profs = hh ? ['me', 'wife'] : ['me'];
+  const T = homeTot(p.f, p.t, hh), PT = homeTot(p.pf, p.pt, hh), cm = p.per === 'fy' ? p.chartMonths : lastMonths(p.mk, 12);
+  const cser = cm.map(k => homeTot(...monthRange(k), hh));
+  const who = hh ? 'Household (' + esc(S.settings.meName || 'Me') + ' + ' + esc(wifeName()) + ')' : esc(S.settings.meName || 'Me');
+  const d = (a, b, good) => { if (!b) return a ? '<span class="sn-m">new</span>' : ''; const pc = Math.round((a - b) / Math.abs(b) * 100); const up = pc >= 0, ok = good ? up : !up; return `<span class="${pc === 0 ? 'sn-m' : ok ? 'sn-g' : 'sn-r'}">${up ? '▲' : '▼'} ${Math.abs(pc)}%</span> <span class="sn-m">${esc(p.cmp)}</span>`; };
+  const rate = T.inc > 0 ? Math.round(T.saved / T.inc * 100) : null;
+  const tx = profs.flatMap(k => txIn(k, p.f, p.t)), ptx = profs.flatMap(k => txIn(k, p.pf, p.pt));
+  const ci = catItems(tx), pci = Object.fromEntries(catItems(ptx).map(i => [i.cat, i.value]));
+  const lbl = cm.map(k => ymLabel(k).replace(/ 20(\d\d)$/, ' $1'));
+  const bills = live(me.bills).filter(b => b.status === 'active');
+  const up = bills.flatMap(b => occurrences(b, td, addDays(td, 30)).map(x => ({ b, d: x }))).filter(x => x.d >= td).filter((x, i, a) => a.findIndex(y => y.b.id === x.b.id && y.d === x.d) === i).sort((a, b) => a.d.localeCompare(b.d));
+  const over = bills.filter(b => b.nextDue && b.nextDue < td);
+  const abb = totals(txIn('me', p.f, p.t)).abb, par = parentsTx(p.f, p.t).reduce((s, t) => s + t.amount, 0);
+  const fr = live(me.friends), recv = fr.reduce((s, f) => s + Math.max(0, friendBalance(f)), 0), owe = fr.reduce((s, f) => s + Math.max(0, -friendBalance(f)), 0), nr = fr.reduce((s, f) => s + friendNR(f), 0);
+  const N = netWorthAt(profs, td);
+  const accs = profs.flatMap(k => P(k).accounts.filter(a => !a.deleted && a.status !== 'closed' && !['UPI app', 'Credit card'].includes(a.type)).map(a => ({ a, k, b: balanceAt(k, a.id, td) }))).filter(x => x.b != null).sort((x, y) => y.b - x.b);
+  const bs = p.per === 'month' ? budgetStatus('me', p.mk) : [];
+  return `<div class="snap">
+  <div class="sn-head"><div><div class="sn-brand">🌊 BlueWave Finance</div><h1>${p.per === 'fy' ? 'Financial year' : 'Monthly'} snapshot · ${esc(p.lab)}</h1><div class="sn-m">${who}${p.per === 'fy' && p.t < fyRange(p.y)[1] ? ' · up to ' + fmtDate(p.t) : ''}</div></div><div class="sn-m" style="text-align:right">Made ${fmtDate(td)}<br>Private — made on your device</div></div>
+  <div class="sn-k">
+    <div><small>💰 Income</small><b class="sn-g">${rs(T.inc)}</b>${d(T.inc, PT.inc, true)}</div>
+    <div><small>🛍️ Spent</small><b class="sn-r">${rs(T.exp)}</b>${d(T.exp, PT.exp, false)}</div>
+    <div><small>📈 Invested</small><b class="sn-b">${rs(T.inv)}</b>${d(T.inv, PT.inv, true)}</div>
+    <div><small>🏦 Saved</small><b class="${T.saved >= 0 ? 'sn-y' : 'sn-r'}">${rs(T.saved)}</b>${rate != null ? `<span class="sn-m">${rate}% of income kept${hh ? '' : ' (after ' + esc(wifeName()) + ')'}</span>` : ''}</div>
+  </div>
+  <div class="sn-row sn-21">
+    <div class="sn-c"><h2>Income vs spending <small>${p.per === 'fy' ? esc(p.lab) + ' by month' : 'last 12 months'} · line = saved</small></h2>${barChart(lbl, [{ name: 'Income', color: '#10b981', values: cser.map(s => s.inc) }, { name: 'Spent', color: '#ef4444', values: cser.map(s => s.exp) }], { h: 200, line: { name: 'Saved', color: '#d97706', values: cser.map(s => s.saved) } })}</div>
+    <div class="sn-c"><h2>Where the money went</h2>${donut(ci.slice(0, 8), 'Spent', T.exp)}</div>
+  </div>
+  <div class="sn-row sn-2">
+    <div class="sn-c"><h2>Top spending <small>${esc(p.cmp)}</small></h2><table>${ci.slice(0, 9).map(i => { const pv = pci[i.cat] || 0, ch = pv ? Math.round((i.value - pv) / pv * 100) : null; return `<tr><td>${esc(i.label)}</td><td class="ra">${rs(i.value)}</td><td class="ra sn-m">${T.exp ? Math.round(i.value / T.exp * 100) + '%' : ''}</td><td class="ra ${ch == null ? 'sn-m' : ch > 0 ? 'sn-r' : 'sn-g'}">${ch == null ? 'new' : (ch > 0 ? '▲' : '▼') + Math.abs(ch) + '%'}</td></tr>`; }).join('') || '<tr><td class="sn-m">No spending</td></tr>'}</table></div>
+    <div class="sn-c"><h2>Family & people</h2><table>
+      <tr><td>👩 To ${esc(wifeName())}</td><td class="ra">${rs(abb)}</td></tr><tr><td>👪 For parents</td><td class="ra">${rs(par)}</td></tr>
+      <tr><td>🤝 Friends owe you</td><td class="ra sn-g">${rs(recv)}</td></tr><tr><td>🤝 You owe</td><td class="ra ${owe ? 'sn-r' : ''}">${rs(owe)}</td></tr>${nr ? `<tr><td>🎁 Given, not returnable (all time)</td><td class="ra">${rs(nr)}</td></tr>` : ''}</table>
+      ${bs.length ? `<h2 style="margin-top:12px">Budgets</h2><table>${bs.slice(0, 5).map(x => `<tr><td>${esc(catName(x.b.cat))}</td><td class="ra">${rs(x.spent)} / ${rs(x.b.amount)}</td><td class="ra ${x.pct >= 1 ? 'sn-r' : x.pct >= .8 ? 'sn-y' : 'sn-g'}">${Math.round(x.pct * 100)}%</td></tr>`).join('')}</table>` : ''}</div>
+  </div>
+  <div class="sn-row sn-2">
+    <div class="sn-c"><h2>Next 30 days <small>${up.length} payments · ${rs(up.reduce((s, x) => s + x.b.amount, 0))}${over.length ? ' · ' + over.length + ' overdue' : ''}</small></h2><table>${over.map(b => `<tr><td class="sn-r">${fmtDateShort(b.nextDue)}</td><td>${esc(b.name)} <span class="sn-r">(overdue)</span></td><td class="ra">${rs(b.amount)}</td></tr>`).join('')}${up.slice(0, 9).map(x => `<tr><td>${fmtDateShort(x.d)}</td><td>${esc(x.b.name)}${x.b.autopay ? ' <span class="sn-m">· auto</span>' : ''}</td><td class="ra">${rs(x.b.amount)}</td></tr>`).join('') || '<tr><td class="sn-m">Nothing due</td></tr>'}</table></div>
+    <div class="sn-c"><h2>Net worth <small>${rs(N.net)}</small></h2><table>${accs.slice(0, 8).map(x => `<tr><td>${esc(x.a.name)}${x.k === 'wife' ? ' <span class="sn-m">(' + esc(wifeName()) + ')</span>' : ''}</td><td class="ra">${rs(x.b)}</td></tr>`).join('')}${N.assets ? `<tr><td>Investments & assets</td><td class="ra">${rs(N.assets)}</td></tr>` : ''}${N.liab ? `<tr><td>Loans & cards owed</td><td class="ra sn-r">−${rs(N.liab)}</td></tr>` : ''}</table></div>
+  </div></div>`;
+}
+const SNAP_CSS = `.snap{--tx:#111;--tx2:#444;--tx3:#6b7280;--line:#e5e7eb;--card:#fff;--card2:#f3f4f6;--bg:#fff;font-family:Inter,Arial,sans-serif;color:#111;font-size:11.5px;max-width:780px;margin:0 auto}
+.snap *{color:inherit}.snap .sn-g{color:#059669!important}.snap .sn-r{color:#dc2626!important}.snap .sn-b{color:#2563eb!important}.snap .sn-y{color:#b45309!important}.snap .sn-m{color:#6b7280!important;font-size:10.5px}
+.snap h1{font-size:19px;margin:2px 0}.snap h2{font-size:12.5px;margin:0 0 6px;padding-bottom:4px;border-bottom:2px solid #f59e0b}.snap h2 small{font-weight:400;color:#6b7280!important;font-size:10px}
+.sn-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0ea5e9;padding-bottom:8px;margin-bottom:10px}.sn-brand{font-weight:800;color:#0ea5e9!important;font-size:12px}
+.sn-k{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}.sn-k>div{border:1px solid #e5e7eb;border-radius:10px;padding:8px 10px}.sn-k small{display:block;color:#6b7280!important;font-size:10.5px;font-weight:700;text-transform:uppercase}.sn-k b{display:block;font-size:17px;margin:2px 0}
+.sn-row{display:grid;gap:10px;margin-bottom:10px;break-inside:avoid}.sn-21{grid-template-columns:11fr 9fr}.sn-2{grid-template-columns:1fr 1fr}.sn-c{border:1px solid #e5e7eb;border-radius:10px;padding:8px 10px;min-width:0}
+.snap table{width:100%;border-collapse:collapse}.snap td{padding:3px 4px;border-bottom:1px solid #f0f0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}.snap .ra{text-align:right}
+.snap svg{max-width:100%;height:auto}.snap .donutwrap{grid-template-columns:96px minmax(0,1fr)!important;gap:8px}.snap .donutwrap .chart{max-width:96px}.snap .legend .li{font-size:10.5px;gap:5px;padding:1px 0}.snap .legend .li .nm{min-width:60px;color:#333!important}.snap .lgrow,.snap .legend{font-size:10px}
+@page{size:A4;margin:10mm}`;
+function snapModal() {
+  const p = homePeriod();
+  modal('📄 Home as PDF', `<div class="small">One page with your tiles, charts, top spending, family, upcoming payments and balances for <b>${esc(p.lab)}</b>${VIEW.sub.homeHH === '1' ? ' (Household)' : ''}. Change the month, FY or Me/Household on Home first if you want a different one.</div><div class="small muted mt">“Save as PDF” opens the print screen — pick <b>Save as PDF</b> as the printer. If your phone doesn’t offer printing, use “Download” and open the file to print or share it.</div>`,
+    `<button class="btn" id="sn_dl">⬇ Download</button><button class="btn pri" id="sn_pr">📄 Save as PDF</button>`, {
+    onMount: m => {
+      $('#sn_pr', m).onclick = () => { let el = $('#print'); if (!el) { el = document.createElement('div'); el.id = 'print'; document.body.appendChild(el); } el.innerHTML = `<style>${SNAP_CSS}</style>` + snapHtml(); closeModal(); setTimeout(() => window.print(), 150); };
+      $('#sn_dl', m).onclick = () => { const css = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n'); const name = 'BlueWave-snapshot-' + (p.per === 'fy' ? fyL(p.y).replace(/\s+/g, '') : p.mk) + '.html';
+        download(name, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BlueWave Finance snapshot · ${esc(p.lab)}</title><style>${css}\nhtml,body{background:#fff!important;color:#111}body{padding:14px;margin:0;overflow:auto!important}${SNAP_CSS}</style></head><body>${snapHtml()}</body></html>`, 'text/html'); toast('Snapshot downloaded'); };
+    }
+  });
+}
+ACT.hSnap = () => snapModal();
+{ const old = VIEWS.dashboard;
+  VIEWS.dashboard = () => old().replace('<div class="hctl">', '<div class="hctl"><button class="btn sm" data-act="hSnap" title="One-page PDF of this view">📄 PDF</button>');
+}
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
