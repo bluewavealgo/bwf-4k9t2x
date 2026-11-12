@@ -1027,7 +1027,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.8';
+const APP_VER = '4.8.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1103,7 +1103,7 @@ const CATS = [
   ['self', 'Self-transfer', '🔄', 'xfer', 'xfer'], ['friend', 'Friends (lend/borrow)', '🤝', 'xfer', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer', 'xfer'],
   ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Son → Dad (repaid / given)', '👨', 'xfer', 'xfer'], ['toson', 'Dad → son (taken)', '👦', 'xfer', 'xfer'], ['cardpay', 'Card bill (card spends counted)', '💳', 'xfer', 'xfer'], ['fromdad', 'Received from Dad (owed)', '👨', 'xfer', 'xfer'],
 ];
-CATS.push(['gold', 'Gold', '🪙', 'inv', 'invest'], ['crypto', 'Crypto F&O (Delta)', '🪙', 'inv', 'invest']);
+CATS.push(['gold', 'Gold', '🪙', 'inv', 'invest'], ['crypto', 'Crypto F&O (Delta)', '🪙', 'inv', 'invest'], ['friendnr', 'Paid for people (not returned)', '🎁', 'exp', 'family']);
 CATS.forEach(c => { c[4] = GROUP_REMAP[c[4]] || c[4];
   if (c[0] === 'wife') { c[1] = 'Sent to ABB'; c[3] = 'abb'; c[4] = 'abb'; }
   if (c[0] === 'tools') { c[1] = 'Trading tools & apps (Tradetron…)'; c[4] = 'misc'; }
@@ -1373,7 +1373,7 @@ function migrate() { const d = seedState(); S.settings = Object.assign(d.setting
     const fe = (f, t) => { f.entries = f.entries || []; if (f.entries.some(e => e.txnId === t.id && !e.deleted)) return; f.entries.push({ id: uid(), type: t.dir === 'dr' ? 'lent' : 'borrowed', amount: t.amount, date: t.date, txnId: t.id, note: '', updatedAt: nowIso() }); touch(f); };
     live(me.txns || []).forEach(t => {
       if (t.userSet) return; const r = classify(t, 'me');
-      if (r.person === 'nitesh' && r.cat === 'friend' && t.cat !== 'friend') { t.cat = 'friend'; t.friendId = nf.id; t.person = 'nitesh'; t.reviewed = true; touch(t); fe(nf, t); }
+      if (r.person === 'nitesh' && r.cat === 'friend' && t.cat !== 'friend' && !t.friendId) { t.cat = 'friend'; t.friendId = nf.id; t.person = 'nitesh'; t.reviewed = true; touch(t); fe(nf, t); }
       else if (['todad', 'fromdad'].includes(r.cat) && (t.cat !== r.cat || t.friendId)) {
         if (t.friendId) { const f = me.friends.find(x => x.id === t.friendId); if (f) { (f.entries || []).forEach(e => { if (e.txnId === t.id) { e.deleted = true; e.updatedAt = nowIso(); } }); touch(f); } }
         t.cat = r.cat; t.person = 'ritesh'; t.friendId = null; t.conf = 'h'; touch(t);
@@ -1499,7 +1499,7 @@ function looksLikePerson(t) {
   const p = (t.payee || '').trim();
   return t.amount >= 1000 && /^[A-Za-z .]{3,30}$/.test(p) && !/LTD|LIMITED|PVT|STORE|SHOP|MART|BANK/i.test(p);
 }
-function needsReview(t) { return !t.reviewed && (t.cat === 'other' || t.cat === 'otherinc' || (t.mode === 'UPI' && t.dir === 'dr' && !t.app && !['self', 'wife', 'friend'].includes(t.cat))); }
+function needsReview(t) { return !t.reviewed && (t.cat === 'other' || t.cat === 'otherinc' || (t.mode === 'UPI' && t.dir === 'dr' && !t.app && !['self', 'wife', 'friend', 'friendnr'].includes(t.cat))); }
 function entrySign(e) { const b = { lent: 1, returned: 1, recvback: -1, borrowed: -1 }[e.type]; if (b) return b; return e.inBal ? (e.dir === 'cr' ? -1 : 1) : 0; }
 function friendBalance(f) { return live(f.entries || []).reduce((s, e) => s + entrySign(e) * e.amount, 0); }
 function friendNR(f) { return live(f.entries || []).filter(e => !entrySign(e) && e.dir !== 'cr').reduce((s, e) => s + e.amount, 0); }
@@ -3944,7 +3944,7 @@ function titleCase(s) { return String(s || '').toLowerCase().replace(/\b\w/g, c 
 function reclassify(k) {
   let n = 0;
   live(P(k).txns).filter(t => !t.reviewed && t.source === 'import' && !t.billId).forEach(t => {
-    const c = classify(t, k); if (t.cat === 'friend' && t.friendId) return;
+    const c = classify(t, k); if (t.friendId && ['friend', 'friendnr'].includes(t.cat)) return;
     if (c.cat !== t.cat || c.app !== t.app || (c.for && c.for !== t.for) || (c.person && c.person !== t.person)) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); if (c.for) t.for = c.for; if (c.person) t.person = c.person; if (c.via) t.via = c.via; if (c.cardId) t.cardId = c.cardId; if (c.loanId) t.loanId = c.loanId; touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
   });
   save(); rerender(); return n;
@@ -4244,7 +4244,7 @@ function txRow(t, profKey) {
 /* ---------- TRANSACTIONS (card list grouped by day) ---------- */
 const _txTable = txnsPanel;
 const TY_CHIPS = [['', 'All'], ['exp', 'Expenses'], ['inc', 'Income'], ['inv', 'Invested'], ['xfer', 'Transfers'], ['wife', '__ABB'], ['friend', 'Friends'], ['parents', 'Parents']];
-const tyMatch = (t, ty) => !ty ? true : ty === 'wife' ? t.cat === 'wife' : ty === 'friend' ? t.cat === 'friend' : ty === 'parents' ? (t.cat === 'parents' || t.for === 'parents') : catType(t.cat) === ty;
+const tyMatch = (t, ty) => !ty ? true : ty === 'wife' ? t.cat === 'wife' : ty === 'friend' ? (t.cat === 'friend' || t.cat === 'friendnr') : ty === 'parents' ? (t.cat === 'parents' || t.for === 'parents') : catType(t.cat) === ty;
 function dateRange(d) { const td = today(); return d === 'today' ? [td, td] : d === 'yday' ? [addDays(td, -1), addDays(td, -1)] : d === '7' ? [addDays(td, -6), td] : d === '30' ? [addDays(td, -29), td] : d === 'month' ? monthRange(ym(td)) : null; }
 txnsPanel = function (profKey) {
   const mode = S.settings.txView || 'cards';
@@ -6488,6 +6488,21 @@ function stackedHBars(rows) {
   return `<div class="shb">${rows.map(r => { const tot = r.parts.reduce((s, p) => s + p[0], 0); return `<div class="shr" ${r.id ? `data-act="friendOpen" data-id="${r.id}"` : ''}><span class="shl">${esc(r.label)}</span><div class="shbar">${r.parts.filter(p => p[0] > 0).map(p => `<i style="width:${(p[0] / max * 100).toFixed(1)}%;background:${p[1]}" title="${esc(p[2])}: ${rs(p[0])}"></i>`).join('')}</div><b class="num">${rsShort(tot)}</b></div>`; }).join('')}</div>
   <div class="lgrow">${used.map(([l, c]) => `<span><i style="background:${c}"></i>${esc(l)}</span>`).join('')}</div>`;
 }
+
+/* money given and not to be returned counts as spending ("Paid for people" under Family) */
+function nrSync(f) {
+  let ch = false; const me = P('me');
+  live(f.entries || []).forEach(e => { if (!e.txnId) return; const t = me.txns.find(x => x.id === e.txnId); if (!t || t.deleted) return;
+    const want = (!entrySign(e) && t.dir === 'dr') ? 'friendnr' : 'friend';
+    if ((t.cat === 'friend' || t.cat === 'friendnr') && t.cat !== want) { t.cat = want; touch(t); ch = true; } });
+  return ch;
+}
+function nrSyncAll() { let ch = false; live(P('me').friends).forEach(f => { if (nrSync(f)) ch = true; }); if (ch) save(); }
+const _addFEX = addFriendEntryFromTxn;
+addFriendEntryFromTxn = function (f, t, type) { _addFEX(f, t, type); nrSync(f); };
+const _saveX = save;
+let NR_BUSY = false;
+save = function () { if (!NR_BUSY) { NR_BUSY = true; try { live(P('me').friends).forEach(nrSync); } catch (e) { } NR_BUSY = false; } return _saveX.apply(this, arguments); };
 
 /* ============ v4.8 — clean Home dashboard ============ */
 function homePeriod() {
