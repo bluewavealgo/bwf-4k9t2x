@@ -934,7 +934,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.4';
+const APP_VER = '4.5';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1152,7 +1152,7 @@ function remarkOf(d) {
 const payeeKey = p => compact(p).replace(/[^A-Z]/g, '').slice(0, 24);
 
 /* ---------- state ---------- */
-const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payslips: [], invvals: [], docs: [], payeeApp: {}, dismissed: [] });
+const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payslips: [], invvals: [], docs: [], ships: [], payeeApp: {}, dismissed: [] });
 function seedState() {
   const t = nowIso();
   // fixed ids + an old timestamp, so every device creates the SAME built-in records and sync never doubles them
@@ -1501,7 +1501,7 @@ function accountBalance(profKey, accId) {
 }
 
 /* ---------- sync (manual, via the user's own Google Apps Script) ---------- */
-const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans', 'cats', 'payslips', 'invvals', 'docs'];
+const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans', 'cats', 'payslips', 'invvals', 'docs', 'ships'];
 const PROFS = ['me', 'wife', 'parents'];
 // money moving inside the household (not real spending when both profiles are combined)
 const hhSkip = t => catType(t.cat) === 'xfer' || t.cat === 'wife';
@@ -5951,6 +5951,155 @@ VIEWS.syncup = () => {
     <div class="small muted mt">Leave this <b>off on the ship</b> — Sync then sends only the small details (policy numbers, dates, amounts). Turn it on at home / on good Wi-Fi: PDFs go to your Drive <b>encrypted with your encryption password</b>, and other devices download a file only when you open it.</div>
     <div class="flex mt"><button class="btn sm" data-act="scriptCheck">🔌 Check my Apps Script</button><span id="scrOut" class="small"></span></div></div>` + _syncupV();
 };
+
+/* ============ v4.5 — ships from Sea Days Ledger (CDC sign-on / sign-off), payslips & money per ship, Documents → Payslips ============ */
+const ships = () => live(P('me').ships || []).filter(s => s.on).sort((a, b) => a.on.localeCompare(b.on));
+const shipNo = s => ships().findIndex(x => x.id === s.id) + 1;
+const shipEnd = s => s.off || today();
+const shipLabel = s => 'Ship ' + shipNo(s) + ' · ' + (s.vessel || 'Vessel');
+// final wages arrive after sign-off → salary credits count for the ship up to ~2 months later
+function shipOf(date, wages) {
+  const L = ships(); let hit = L.find(s => date >= s.on && date <= shipEnd(s)); if (hit || !wages) return hit || null;
+  return L.slice().reverse().find(s => s.off && date > s.off && daysBetween(s.off, date) <= 62) || null;
+}
+function shipForSlip(sl) {
+  const L = ships(), a = sl.from || sl.month + '-01', b = sl.to || monthRange(sl.month)[1], v = compact(sl.vessel || '');
+  const over = L.filter(s => s.on <= b && shipEnd(s) >= a);
+  return over.find(s => v && compact(s.vessel || '').replace(/^(MV|MT|M\/V|M\/T)/, '') === v.replace(/^(MV|MT|M\/V|M\/T)/, '')) || over.find(s => v && (compact(s.vessel || '').includes(v) || v.includes(compact(s.vessel || '')))) || over[0] || null;
+}
+function parseShips(txt) {
+  const m = String(txt || '').trim().match(/BWF-SHIPS:1:([A-Za-z0-9+/=\s]+)/); if (!m) return null;
+  try { const L = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/\s+/g, ''))))); return Array.isArray(L) ? L.filter(c => c && c.on) : null; } catch (e) { return null; }
+}
+function saveShips(L) {
+  const me = P('me'); me.ships = me.ships || []; let add = 0, upd = 0;
+  L.forEach(c => { const id = 'ship_' + String(c.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40); const ex = me.ships.find(x => x.id === id);
+    const v = { vessel: c.vessel, type: c.type, company: c.company, rank: c.rank, flag: c.flag, on: c.on, off: c.off || '' };
+    if (ex) { if (JSON.stringify(v) !== JSON.stringify({ vessel: ex.vessel, type: ex.type, company: ex.company, rank: ex.rank, flag: ex.flag, on: ex.on, off: ex.off })) { Object.assign(ex, v); delete ex.deleted; touch(ex); upd++; } }
+    else { me.ships.push(touch(Object.assign({ id, sdlId: c.id }, v))); add++; } });
+  save(); return { add, upd };
+}
+async function pasteShips() {
+  let t = ''; try { if (navigator.clipboard && navigator.clipboard.readText) t = await navigator.clipboard.readText(); } catch (e) { }
+  const L = parseShips(t);
+  const done = L2 => { const r = saveShips(L2); closeModal(); rerender(); toast(`${ships().length} ships · ${r.add} new · ${r.upd} updated`, 5000); };
+  if (L) { done(L); return; }
+  modal('Paste ships from Sea Days Ledger', `<ol class="small" style="color:var(--tx2);padding-left:18px;margin-top:0"><li>Open <b>Sea Days Ledger → Sea service</b> and tap <b>📋 Copy ships for BlueWave Finance</b>.</li><li>Come back here and paste below (tap and hold → Paste).</li></ol>
+    <textarea class="inp" id="sh_t" rows="4" placeholder="BWF-SHIPS:1:…"></textarea><div class="small muted mt">Only vessel, company, rank and CDC sign-on / sign-off dates are copied.</div>`,
+    `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="sh_go">Add ships</button>`, { onMount: m => { $('#sh_t', m).focus(); $('#sh_go', m).onclick = () => { const L2 = parseShips($('#sh_t', m).value); if (!L2 || !L2.length) { toast('That doesn’t look like the ship list — copy it again in Sea Days Ledger'); return; } done(L2); }; } });
+}
+/* money in a period (both your accounts; ABB's spending shown separately) */
+function periodMoney(f, t) { const T = totals(txIn('me', f, t)); return T; }
+function shipsSection() {
+  const L = ships(), M = typeof slipMatches === 'function' ? slipMatches() : {};
+  const head = `<div class="sec">🚢 Ships <small style="text-transform:none;letter-spacing:0">CDC sign-on → sign-off</small><span class="sp"></span><button class="btn sm pri" data-act="shipPaste" style="text-transform:none;letter-spacing:0">⬇ Paste ships from Sea Days Ledger</button></div>`;
+  if (!L.length) return head + `<div class="card"><div class="small muted">Bring your contracts from <b>Sea Days Ledger</b> (Sea service → 📋 Copy ships for BlueWave Finance), then tap <b>Paste ships</b>. Payslips, salary and what you spent at home are then grouped as Ship 1, Ship 2…</div></div>`;
+  const sal = salaryTx(), slipsAll = slips();
+  const cards = L.slice().reverse().map(s => {
+    const n = shipNo(s), end = shipEnd(s), days = daysBetween(s.on, end) + 1;
+    const cr = sal.filter(t => { const sh = shipOf(t.date, true); return sh && sh.id === s.id; }), ps = slipsAll.filter(x => { const sh = shipForSlip(x); return sh && sh.id === s.id; });
+    const T = periodMoney(s.on, end), earned = ps.reduce((a, x) => a + (+x.earnedUsd || 0), 0), home = ps.reduce((a, x) => a + (+x.remitUsd || 0), 0), cash = ps.reduce((a, x) => a + (+x.cashUsd || 0), 0), oth = ps.reduce((a, x) => a + (+x.deductUsd || 0), 0);
+    const months = []; for (let m = s.on.slice(0, 7); m <= end.slice(0, 7); m = addDays(m + '-28', 5).slice(0, 7)) months.push(m);
+    const missing = ps.length ? months.filter(m => !ps.some(x => x.month === m) && (s.off || m < ym(today()))) : [];
+    return `<div class="card mt"><h3>🚢 Ship ${n} · ${esc(s.vessel || '')} <small>${esc([s.rank, s.company, s.type].filter(Boolean).join(' · '))}</small><span class="sp"></span><span class="small muted">${fmtDate(s.on)} → ${s.off ? fmtDate(s.off) : 'on board now'} · ${days} days</span></h3>
+      <div class="grid g4" style="gap:10px">${kpi('🏦 Salary credited', rs(sumAmt(cr)), cr.length + ' credits (incl. final wages)', 'grn')}${ps.length ? kpi('💵 Earned (payslips)', usd(earned), ps.length + ' payslips · sent home ' + usd(home), 'acc') : kpi('🧾 Payslips', '—', 'none uploaded for this ship', '')}${kpi('💸 Cash onboard', ps.length ? usd(cash) : '—', ps.length && oth ? 'other deductions ' + usd(oth) : '', 'gold')}${kpi('🏠 At home meanwhile', rs(T.exp), `To ${esc(wifeName())} ${rs(T.abb)} · invested ${rs(T.inv)}`, 'red')}</div>
+      ${missing.length ? `<div class="alert amb mt">🟡 <div>No payslip for <b>${missing.map(ymLabel).join(', ')}</b>.</div></div>` : ''}
+      <div class="flex mt" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-act="shipTx" data-f="${s.on}" data-t="${end}">See all entries in this period</button></div></div>`;
+  }).join('');
+  // leave between ships
+  const leaves = []; for (let i = 1; i < L.length; i++) { const a = L[i - 1], b = L[i]; if (a.off && b.on > addDays(a.off, 1)) leaves.push({ f: addDays(a.off, 1), t: addDays(b.on, -1), after: i }); }
+  const last = L[L.length - 1]; if (last.off && last.off < today()) leaves.push({ f: addDays(last.off, 1), t: today(), after: L.length, now: true });
+  const lv = leaves.length ? `<div class="sec">🏖️ Between ships (leave)</div><div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Leave</th><th class="ra">Days</th><th class="ra">Spent</th><th class="ra">To ${esc(wifeName())}</th><th class="ra">Invested</th><th class="ra">Salary in</th></tr></thead><tbody>${leaves.reverse().map(l => { const T = periodMoney(l.f, l.t); return `<tr class="clk" data-act="shipTx" data-f="${l.f}" data-t="${l.t}"><td>After Ship ${l.after}${l.now ? ' (now)' : ''}<div class="small muted">${fmtDate(l.f)} → ${l.now ? 'today' : fmtDate(l.t)}</div></td><td class="ra">${daysBetween(l.f, l.t) + 1}</td><td class="ra num dr">${rs(T.exp)}</td><td class="ra num">${rs(T.abb)}</td><td class="ra num">${rs(T.inv)}</td><td class="ra num cr">${rs(sumAmt(sal.filter(x => x.date >= l.f && x.date <= l.t)))}</td></tr>`; }).join('')}</tbody></table></div><div class="small muted" style="padding:6px">“Salary in” during leave is usually the final wages of the previous ship.</div></div>` : '';
+  return head + cards + lv;
+}
+// Me → Income: ships replace the guessed "contracts" list; payslip cards group by ship
+const _incomeTab = incomeTab;
+incomeTab = function () {
+  let h = _incomeTab();
+  const a = h.indexOf('<div class="sec">Contracts (worked out from salary dates)</div>');
+  if (a >= 0) { const b = h.indexOf('<div class="sec">🧾 Payslips', a); if (b > a) h = h.slice(0, a) + h.slice(b); }
+  const p = h.indexOf('<div class="sec">🧾 Payslips');
+  return p >= 0 ? h.slice(0, p) + shipsSection() + h.slice(p) : h + shipsSection();
+};
+const _slipContracts = slipContracts;
+slipContracts = function (L) {
+  if (!ships().length) return _slipContracts(L);
+  const g = {}; L.forEach(s => { const sh = shipForSlip(s), k = sh ? sh.id : (s.vessel || '?') + '|' + (s.signOn || s.month); (g[k] = g[k] || []).push(s); });
+  return Object.values(g).map(l => l.sort((a, b) => a.month.localeCompare(b.month))).sort((a, b) => b[0].month.localeCompare(a[0].month));
+};
+// show "Ship N ·" on the payslip contract cards
+const _payslipSection = payslipSection;
+payslipSection = function () {
+  let h = _payslipSection(); if (!ships().length) return h;
+  return h.replace(/<h3>🚢 ([^<]*?) <small>/g, (m, v) => { const sh = ships().find(s => compact(s.vessel || '') === compact(v)); return sh ? `<h3>🚢 Ship ${shipNo(sh)} · ${v} <small>` : m; });
+};
+
+/* ---- Documents → Payslips: stays on the Documents page; PDFs are kept as documents ---- */
+const _slipUpload = slipUpload;
+slipUpload = async function (files) {
+  RD.slipFiles = files; return _slipUpload(files);
+};
+// after payslips are saved, keep each PDF as a document so it can be opened later / backed up
+document.addEventListener('click', async e => {
+  if (e.target.id !== 'sl_imp' || !RD.slipFiles) return;
+  const files = RD.slipFiles; RD.slipFiles = null;
+  setTimeout(async () => {
+    const L = P('me').payslips || [], D = P('me').docs = P('me').docs || [];
+    for (const f of files) {
+      const mine = live(L).filter(s => s.file === f.name); if (!mine.length) continue;
+      const months = mine.map(s => s.month).sort(), id = 'dps_' + compact(f.name).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40) + '_' + f.size;
+      let d = D.find(x => x.id === id);
+      if (!d) { d = { id, kind: 'slip', fy: fyNum(months[0] + '-01'), title: 'Payslips · ' + (mine[0].vessel || '') + ' · ' + ymLabel(months[0]) + (months.length > 1 ? ' – ' + ymLabel(months[months.length - 1]) : ''), file: { name: f.name, size: f.size, type: f.type || 'application/pdf' }, drive: false }; D.push(d); }
+      await fileSaveLocal(id, new Uint8Array(await f.arrayBuffer())); touch(d);
+      mine.forEach(s => { s.docId = id; touch(s); });
+    }
+    save(); rerender();
+  }, 50);
+}, true);
+function slipDocsTab() {
+  const L = slips(), byShip = {}, none = [];
+  L.forEach(s => { const sh = ships().length ? shipForSlip(s) : null; if (sh) (byShip[sh.id] = byShip[sh.id] || []).push(s); else none.push(s); });
+  const open = s => s.docId && (DOCF.local.has(s.docId) || (docs('me').find(d => d.id === s.docId) || {}).drive) ? `<button class="btn sm pri" data-act="docOpen" data-prof="me" data-id="${s.docId}">${DOCF.local.has(s.docId) ? 'Open' : '☁️ Get'}</button>` : '<span class="small muted">no PDF</span>';
+  const tbl = l => `<div class="tblw"><table class="t"><thead><tr><th>Month</th><th class="ra">Earned</th><th class="ra">Sent home</th><th class="ra">Cash</th><th></th></tr></thead><tbody>${l.sort((a, b) => b.month.localeCompare(a.month)).map(s => `<tr><td class="clk" data-act="slipEdit" data-id="${s.id}">${ymLabel(s.month)}</td><td class="ra num">${usd(s.earnedUsd)}</td><td class="ra num">${s.remitUsd ? usd(s.remitUsd) : '—'}</td><td class="ra num">${s.cashUsd ? usd(s.cashUsd) : '—'}</td><td class="ra">${open(s)}</td></tr>`).join('')}</tbody></table></div>`;
+  const groups = ships().slice().reverse().filter(s => byShip[s.id]).map(s => `<div class="card mt" style="padding:10px 14px"><h3>🚢 Ship ${shipNo(s)} · ${esc(s.vessel || '')} <small>${fmtDate(s.on)} → ${s.off ? fmtDate(s.off) : 'now'}</small></h3>${tbl(byShip[s.id])}</div>`).join('');
+  const rest = none.length ? (() => { const g = {}; none.forEach(s => { const k = s.vessel || 'Other'; (g[k] = g[k] || []).push(s); }); return Object.entries(g).map(([v, l]) => `<div class="card mt" style="padding:10px 14px"><h3>🚢 ${esc(v)} <small>${ships().length ? 'not matched to a ship' : ''}</small></h3>${tbl(l)}</div>`).join(''); })() : '';
+  return `<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:6px"><label class="btn pri" style="cursor:pointer">⬆ Upload payslips (PDF)<input type="file" id="slip_file" multiple accept=".pdf" style="display:none"></label><button class="btn" data-act="slipEdit">＋ Add by hand</button>${ships().length ? '' : '<button class="btn" data-act="shipPaste">⬇ Paste ships from Sea Days Ledger</button>'}<span class="sp"></span><button class="btn ghost" data-act="rdGo2" data-v="inc">📊 See salary analysis</button></div>
+    ${L.length ? groups + rest : `<div class="card mt">${emptyBox('🚢', 'No payslips yet', 'Upload your V Ships wage accounts — several PDFs at once is fine.', '')}</div>`}`;
+}
+const _stmtsV2 = VIEWS.stmts;
+VIEWS.stmts = () => {
+  if ((VIEW.sub.dSec || 'bank') !== 'slip') return _stmtsV2();
+  if (!DOCF.loaded) refreshLocalFiles().then(() => { if (VIEW.tab === 'stmts') rerender(); });
+  const tabs = `<div class="tabs">${DOC_KINDS.map(([id, ic, l]) => `<button class="tab ${id === 'slip' ? 'on' : ''}" data-act="rdSec" data-base="dSec" data-v="${id}">${ic} ${l}</button>`).join('')}</div>`;
+  return tabs + slipDocsTab();
+};
+// FY checklist: the payslip line stays in Documents
+const _checklist = checklist;
+checklist = k => _checklist(k).replace('data-act="rdGo" data-v="inc"', 'data-act="rdSec" data-base="dSec" data-v="slip"');
+// payslip PDFs are documents too (Drive backup, open on any device) but not listed under the other tabs
+DOC_KINDS.forEach(() => { });
+
+/* ---- ship filter in All transactions, and "Ship 3" in search ---- */
+const _txPanel3 = txnsPanel;
+txnsPanel = function (profKey) {
+  let h = _txPanel3(profKey); if (!ships().length || (S.settings.txView || 'cards') === 'table') return h;
+  const F = VIEW.sub['f_' + profKey] || {}, cur = ships().find(s => F.from === s.on && F.to === shipEnd(s));
+  const sel = `<select class="fchip sel" data-act="rdShip" data-prof="${profKey}"><option value="">🚢 Any ship</option>${ships().map(s => `<option value="${s.id}" ${cur && cur.id === s.id ? 'selected' : ''}>${esc(shipLabel(s))}</option>`).join('')}</select>`;
+  return h.replace('<select class="fchip sel" data-act="rdF" data-k="pm"', sel + '<select class="fchip sel" data-act="rdF" data-k="pm"');
+};
+const _gResults = gResults;
+gResults = function (q) {
+  const m = String(q || '').trim().match(/^ship\s*(\d+)$/i), sh = m ? ships()[+m[1] - 1] : ships().find(s => q && q.length >= 3 && compact(s.vessel || '').includes(compact(q)));
+  if (!sh) return _gResults(q);
+  const end = shipEnd(sh), tx = live(P('me').txns).filter(t => t.date >= sh.on && t.date <= end), T = totals(tx);
+  return `<div class="card" style="margin-bottom:10px"><b>🚢 ${esc(shipLabel(sh))}</b> <span class="small muted">${fmtDate(sh.on)} → ${sh.off ? fmtDate(sh.off) : 'now'}</span><div class="small mt">${tx.length} entries · spent ${rs(T.exp)} · to ${esc(wifeName())} ${rs(T.abb)} · invested ${rs(T.inv)}</div><button class="btn sm mt" data-act="shipTx" data-f="${sh.on}" data-t="${end}">Open these entries</button></div>` + (m ? '' : _gResults(q));
+};
+Object.assign(ACT, {
+  shipPaste: () => pasteShips(),
+  shipTx: el => { closeModal(); VIEW.tab = 'money'; VIEW.sub.money = 'txns'; VIEW.sub.f_me = { from: el.dataset.f, to: el.dataset.t }; render(); },
+  rdGo2: el => { VIEW.tab = 'me'; VIEW.sub.meSec = el.dataset.v; VIEW.sub.p_inc = 'all'; render(); },
+});
+Object.assign(CHANGE, { rdShip: el => { const F = VIEW.sub['f_' + el.dataset.prof] = VIEW.sub['f_' + el.dataset.prof] || {}; const s = ships().find(x => x.id === el.value); if (s) { F.from = s.on; F.to = shipEnd(s); F.d = ''; F.m = ''; } else { F.from = ''; F.to = ''; } VIEW.keepScroll = true; rerender(); } });
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
