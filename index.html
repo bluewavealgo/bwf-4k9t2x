@@ -990,7 +990,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.6';
+const APP_VER = '4.7';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2457,11 +2457,11 @@ VIEWS.settings = () => {
 /* ---------- edit modals ---------- */
 function billModal(id, kind, preset) {
   const b = id ? P('me').bills.find(x => x.id === id) : null;
-  const d = b || Object.assign({ kind: kind || 'bill', name: '', cat: kind === 'sub' ? 'subs' : 'electricity', amount: '', variable: false, cycle: 'monthly', nextDue: addDays(today(), 7), autopay: false, method: 'UPI', account: '', consumerNo: '', url: '', match: '', trialEnd: '', status: 'active', unused: false, notes: '' }, preset || {});
+  const d = b ? Object.assign({}, b, preset || {}) : Object.assign({ kind: kind || 'bill', name: '', cat: kind === 'sub' ? 'subs' : 'electricity', amount: '', variable: false, cycle: 'monthly', nextDue: addDays(today(), 7), autopay: false, method: 'UPI', account: '', consumerNo: '', url: '', match: '', trialEnd: '', status: 'active', unused: false, notes: '' }, preset || {});
   const isSub = d.kind === 'sub';
   modal(b ? 'Edit ' + esc(b.name) : 'Add ' + (isSub ? 'subscription' : 'bill'), `
   <div class="frow"><div class="fld"><label>Name</label><input class="inp" id="b_name" value="${esc(d.name)}" placeholder="${isSub ? 'e.g. Netflix, Tradetron' : 'e.g. MSEDCL electricity'}"></div>
-  <div class="fld"><label>Type</label><select class="inp" id="b_kind"><option value="bill" ${!isSub ? 'selected' : ''}>Bill</option><option value="sub" ${isSub ? 'selected' : ''}>Subscription</option></select></div>
+  <div class="fld"><label>Type</label><select class="inp" id="b_kind"><option value="bill" ${!isSub ? 'selected' : ''}>Bill</option><option value="sub" ${isSub ? 'selected' : ''}>Subscription</option><option value="fixed">Fixed payment (EMI / insurance / SIP)</option></select></div>
   <div class="fld"><label>Category</label><select class="inp" id="b_cat">${catOptions(d.cat, ['exp', 'inv'])}</select></div></div>
   <div class="frow"><div class="fld"><label>Amount (₹)</label><input class="inp" id="b_amt" type="number" min="0" step="0.01" value="${esc(d.amount)}" inputmode="decimal"></div>
   <div class="fld"><label>Repeats</label><select class="inp" id="b_cyc">${Object.entries(CYCLES).map(([k, l]) => `<option value="${k}" ${d.cycle === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -2478,12 +2478,16 @@ function billModal(id, kind, preset) {
   <div class="fld"><label>Notes</label><textarea class="inp" id="b_notes" rows="2">${esc(d.notes)}</textarea></div>
   ${b && (b.priceLog || []).length ? `<div class="sec">Price changes</div>${b.priceLog.map(p => `<div class="small">${fmtDate(p.date)}: ${rs(p.from)} → <b>${rs(p.to)}</b></div>`).join('')}` : ''}
   ${b && (b.payments || []).length ? `<div class="sec">Recent payments</div>${b.payments.slice(-5).reverse().map(p => `<div class="small">${fmtDate(p.date)} · ${rs(p.amount)} · ${esc(p.mode || '')}${p.auto ? ' (from statement)' : ''}</div>`).join('')}` : ''}`,
-    `${b ? '<button class="btn dan" id="b_del">Delete</button><button class="btn" id="b_ics">📆 To calendar</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="b_save">Save</button>`, {
+    `${b ? '<button class="btn dan" id="b_del">Delete</button><button class="btn" id="b_ics">📆 To calendar</button><button class="btn" id="b_dup">📄 Duplicate</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="b_save">Save</button>`, {
     onMount: m => {
-      $('#b_kind', m).onchange = e => { const vals = collect(); billModal(id, e.target.value, Object.assign(vals, { kind: e.target.value })); };
+      $('#b_kind', m).onchange = e => { const vals = collect(), k = e.target.value;
+        if (k === 'fixed') { if (b) { billMove(b.id, 'fixed'); save(); fixedModal(b.id); rerender(); } else fixedModal(null, vals); return; }
+        vals.cat = kindCat(vals.cat, k); billModal(id, k, Object.assign(vals, { kind: k })); };
+      if ($('#b_dup', m)) $('#b_dup', m).onclick = () => billDuplicate(b.id);
       const collect = () => ({ name: $('#b_name', m).value.trim(), kind: $('#b_kind', m).value, cat: $('#b_cat', m).value, amount: +$('#b_amt', m).value || 0, cycle: $('#b_cyc', m).value, nextDue: $('#b_due', m).value, variable: $('#b_var', m).checked, autopay: $('#b_auto', m).checked, unused: $('#b_unused', m) ? $('#b_unused', m).checked : false, method: $('#b_meth', m).value, account: $('#b_acc', m).value, status: $('#b_st', m).value, consumerNo: $('#b_cno', m).value.trim(), url: $('#b_url', m).value.trim(), trialEnd: $('#b_trial', m) ? $('#b_trial', m).value : '', match: $('#b_match', m).value.trim(), notes: $('#b_notes', m).value, forWho: $('#b_for', m).value });
       $('#b_save', m).onclick = () => {
         const v = collect(); if (!v.name) { toast('Give it a name'); return; } if (!v.nextDue) { toast('Set the next due date'); return; }
+        if (b && v.kind !== b.kind) b.kindSet = true;
         if (b) { if (+b.amount !== v.amount && b.amount) { b.priceLog = b.priceLog || []; b.priceLog.push({ date: today(), from: b.amount, to: v.amount }); } Object.assign(b, v); touch(b); }
         if (b && b.forWho !== undefined) live(P('me').txns).filter(t => t.billId === b.id).forEach(t => { t.for = v.forWho; touch(t); });
         if (!b) { const nb = touch(Object.assign({ id: uid(), payments: [], priceLog: [] }, v)); if (!nb.match) nb.match = nb.name; P('me').bills.push(nb); linkBills('me', live(P('me').txns).filter(t => t.date >= addDays(nb.nextDue, -40))); }
@@ -3688,7 +3692,7 @@ const FTYPES2 = {
   other: { label: 'Other fixed payment', icon: '🔒', cat: 'other', group: 'other' },
 };
 const FGROUPS = [['loans', '🏦 Loans & EMIs'], ['ins', '🛡️ Insurance'], ['inv', '📈 Investing & SIPs'], ['other', '🔒 Other fixed payments']];
-function isFixed(b) { return b.kind === 'fixed' || (b.kind !== 'sub' && ['insurance', 'emi', 'invest'].includes(b.cat)); }
+function isFixed(b) { return b.kind === 'fixed' || (!b.kindSet && b.kind !== 'sub' && ['insurance', 'emi', 'invest'].includes(b.cat)); }
 function fixedType(b) { if (b.ftype && FTYPES2[b.ftype]) return b.ftype; return b.cat === 'emi' ? 'emi' : b.cat === 'insurance' ? 'life' : b.cat === 'invest' ? 'sip' : 'other'; }
 function instalments(b) {
   const td = today(); const start = b.startDate || null;
@@ -3763,7 +3767,7 @@ function fixedModal(id, preset) {
   <div class="fld"><label>Notes</label><input class="inp" id="fx_no" value="${esc(d.notes)}" placeholder="e.g. nominee, agent contact, renewal steps"></div>
   ${b && (b.payments || []).length ? `<div class="sec">Recent payments</div>${b.payments.slice(-6).reverse().map(p => `<div class="small">${fmtDate(p.date)} · ${rs(p.amount)}${p.auto ? ' · from statement' : ''}</div>`).join('')}` : ''}
   <div class="small muted mt">Payments are matched automatically when you import a statement (using the word above), so the next date moves forward by itself.</div>`,
-    `${b ? '<button class="btn dan" id="fx_del">Delete</button><button class="btn" id="fx_ics">📆 To calendar</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="fx_s">Save</button>`, {
+    `${b ? '<button class="btn dan" id="fx_del">Delete</button><button class="btn" id="fx_ics">📆 To calendar</button><button class="btn" id="fx_dup">📄 Duplicate</button><button class="btn" id="fx_mv">↔ Move to…</button>' : ''}<span style="flex:1"></span><button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="fx_s">Save</button>`, {
     onMount: m => {
       const val = () => { const t = $('#fx_ty', m).value; return { kind: 'fixed', ftype: t, cat: FTYPES2[t].cat, name: $('#fx_n', m).value.trim(), provider: $('#fx_p', m).value.trim(), amount: +$('#fx_a', m).value || 0, cycle: $('#fx_c', m).value, nextDue: $('#fx_nd', m).value, refNo: $('#fx_r', m).value.trim(), startDate: $('#fx_sd', m).value, tenure: +$('#fx_t', m).value || 0, endDate: $('#fx_ed', m).value, principal: $('#fx_pr', m) ? +$('#fx_pr', m).value || 0 : (d.principal || 0), rate: $('#fx_ra', m) ? +$('#fx_ra', m).value || 0 : (d.rate || 0), cover: $('#fx_cv', m) ? +$('#fx_cv', m).value || 0 : (d.cover || 0), coverTill: $('#fx_ct', m) ? $('#fx_ct', m).value : (d.coverTill || ''), account: $('#fx_ac', m).value, match: $('#fx_m', m).value.trim(), status: $('#fx_st', m).value, autopay: $('#fx_au', m).checked, forWho: $('#fx_fp', m).checked ? 'parents' : '', method: $('#fx_au', m).checked ? 'Auto-debit' : 'UPI', notes: $('#fx_no', m).value }; };
       $('#fx_ty', m).onchange = () => fixedModal(id, val());
@@ -3774,6 +3778,7 @@ function fixedModal(id, preset) {
         else { const nb = touch(Object.assign({ id: uid(), payments: [], priceLog: [] }, v)); P('me').bills.push(nb); linkBills('me', live(P('me').txns).filter(t => t.date >= addDays(nb.nextDue, -40))); }
         save(); closeModal(); render(); toast('Saved');
       };
+      if (b) { $('#fx_dup', m).onclick = () => billDuplicate(b.id); $('#fx_mv', m).onclick = () => billMenu(b.id); }
       if (b) { $('#fx_del', m).onclick = () => confirmBox('Delete ' + esc(b.name) + '?', 'Its payment history will be removed too.', 'Delete', () => { removeRec(P('me').bills, b.id); save(); render(); }, true); $('#fx_ics', m).onclick = () => download(b.name.replace(/\W+/g, '_') + '.ics', icsFor([b]), 'text/calendar'); }
     }
   });
@@ -6162,6 +6167,197 @@ Object.assign(ACT, {
   rdGo2: el => { VIEW.tab = 'me'; VIEW.sub.meSec = el.dataset.v; VIEW.sub.p_inc = 'all'; render(); },
 });
 Object.assign(CHANGE, { rdShip: el => { const F = VIEW.sub['f_' + el.dataset.prof] = VIEW.sub['f_' + el.dataset.prof] || {}; const s = ships().find(x => x.id === el.value); if (s) { F.from = s.on; F.to = shipEnd(s); F.d = ''; F.m = ''; } else { F.from = ''; F.to = ''; } VIEW.keepScroll = true; rerender(); } });
+
+/* ============ v4.7 — bills / subscriptions / fixed payments: move between types, duplicate, one "All payments" page ============ */
+const SUB_CATS = ['subs', 'tools', 'appstore', 'entertainment'];
+const typeOfBill = b => isFixed(b) ? 'fixed' : b.kind === 'sub' ? 'sub' : 'bill';
+const TYPE_L = { bill: ['🧾', 'Bill'], sub: ['🔁', 'Subscription'], fixed: ['🔒', 'Fixed payment'] };
+function kindCat(cat, k) {
+  if (k === 'sub' && !SUB_CATS.includes(cat) && ['home', 'misc'].includes(catGroup(cat))) return 'subs';
+  if (k === 'bill' && SUB_CATS.includes(cat)) return 'home';
+  return cat;
+}
+function billMove(id, to) {
+  const b = P('me').bills.find(x => x.id === id); if (!b) return;
+  if (to === 'fixed') { b.kind = 'fixed'; b.ftype = b.ftype || (b.cat === 'emi' || b.cat === 'carloan' ? 'emi' : b.cat === 'healthins' ? 'health' : b.cat === 'term' ? 'term' : b.cat === 'vehins' ? 'vehicle' : b.cat === 'insurance' ? 'life' : catGroup(b.cat) === 'invest' ? 'sip' : 'other'); b.autopay = b.autopay !== false; }
+  else { b.kind = to; b.cat = kindCat(b.cat, to); }
+  b.kindSet = true; touch(b);
+}
+function billCopy(b) {
+  const c = JSON.parse(JSON.stringify(b)); ['id', 'payments', 'priceLog', 'updatedAt', 'deleted', 'kindSet', 'lastPaid'].forEach(k => delete c[k]);
+  c.name = (b.name || '') + ' (copy)'; return c;
+}
+function billDuplicate(id) {
+  const b = P('me').bills.find(x => x.id === id); if (!b) return;
+  const c = billCopy(b), t = typeOfBill(b);
+  closeModal(); toast('Copy — edit it and tap Save');
+  if (t === 'fixed') fixedModal(null, c); else billModal(null, t, c);
+}
+function billMenu(id) {
+  const b = P('me').bills.find(x => x.id === id); if (!b) return; const t = typeOfBill(b);
+  modal(esc(b.name), `<div class="small muted" style="margin-bottom:10px">Now: ${TYPE_L[t][0]} ${TYPE_L[t][1]} · ${rs(b.amount)} · ${esc(CYCLES[b.cycle] || '')}</div>
+    <div class="list">${['bill', 'sub', 'fixed'].filter(k => k !== t).map(k => `<button class="row" style="width:100%;text-align:left;cursor:pointer" data-bmv="${k}"><div class="ico">${TYPE_L[k][0]}</div><div class="mid"><div class="t1">Move to ${k === 'bill' ? 'Bills' : k === 'sub' ? 'Subscriptions' : 'Fixed payments'}</div><div class="t2">payment history and linked bank entries are kept</div></div></button>`).join('')}
+    <button class="row" style="width:100%;text-align:left;cursor:pointer" data-bdup="1"><div class="ico">📄</div><div class="mid"><div class="t1">Duplicate</div><div class="t2">opens a copy to edit — nothing is saved until you tap Save</div></div></button>
+    <button class="row" style="width:100%;text-align:left;cursor:pointer" data-bed="1"><div class="ico">✏️</div><div class="mid"><div class="t1">Edit</div></div></button></div>`, '<button class="btn" data-act="closeModal">Close</button>', { onMount: m => {
+      $$('[data-bmv]', m).forEach(x => x.onclick = () => { const to = x.dataset.bmv; billMove(id, to); save(); closeModal(); rerender(); toast('Moved to ' + (to === 'bill' ? 'Bills' : to === 'sub' ? 'Subscriptions' : 'Fixed payments')); });
+      $('[data-bdup]', m).onclick = () => billDuplicate(id);
+      $('[data-bed]', m).onclick = () => { closeModal(); billModal(id, b.kind); };
+    } });
+}
+// long-press any bill / subscription / fixed payment in a list → Move to… / Duplicate
+let BLP = null, BLP_FIRED = false;
+document.addEventListener('pointerdown', e => { const el = e.target.closest('[data-act=editBill][data-id]'); if (!el) return; const x = e.clientX, y = e.clientY;
+  BLP = { x, y, t: setTimeout(() => { BLP_FIRED = true; if (navigator.vibrate) try { navigator.vibrate(30); } catch (er) { } billMenu(el.dataset.id); }, 600) }; }, { passive: true });
+['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => document.addEventListener(ev, () => { if (BLP) { clearTimeout(BLP.t); BLP = null; } }, { passive: true }));
+document.addEventListener('pointermove', e => { if (BLP && Math.hypot(e.clientX - BLP.x, e.clientY - BLP.y) > 10) { clearTimeout(BLP.t); BLP = null; } }, { passive: true });
+document.addEventListener('click', e => { if (BLP_FIRED) { BLP_FIRED = false; if (e.target.closest('[data-act=editBill]')) { e.stopPropagation(); e.preventDefault(); } } }, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest('[data-act=editBill][data-id]')) e.preventDefault(); });
+
+/* ---- 📅 All payments ---- */
+const PA_DUE = [['over', 'Overdue'], ['7', 'Next 7 days'], ['30', 'Next 30 days'], ['month', 'This month'], ['all', 'All']];
+VIEWS.payall = () => {
+  const F = VIEW.sub.pa = VIEW.sub.pa || { ty: '', cat: '', acc: '', auto: '', due: 'all', st: 'active', q: '', sort: 'due' }, td = today();
+  const all = live(P('me').bills);
+  let L = all.filter(b => (!F.ty || typeOfBill(b) === F.ty) && (!F.cat || catGroup(b.cat) === F.cat) && (!F.acc || b.account === F.acc) && (!F.auto || (F.auto === 'auto' ? b.autopay : !b.autopay)) && (!F.st || (F.st === 'active' ? b.status === 'active' : b.status !== 'active')));
+  if (F.q) { const q = F.q.toLowerCase(); L = L.filter(b => (b.name + ' ' + (b.provider || '') + ' ' + catName(b.cat) + ' ' + (b.notes || '') + ' ' + b.amount).toLowerCase().includes(q)); }
+  const dueOk = b => { if (!b.nextDue) return F.due === 'all'; const d = daysBetween(td, b.nextDue); return F.due === 'all' ? true : F.due === 'over' ? d < 0 : F.due === 'month' ? b.nextDue.slice(0, 7) === td.slice(0, 7) || d < 0 : d <= +F.due; };
+  L = L.filter(dueOk);
+  const srt = { due: (a, b) => (a.nextDue || '9999').localeCompare(b.nextDue || '9999'), amt: (a, b) => b.amount - a.amount, name: (a, b) => a.name.localeCompare(b.name), cat: (a, b) => catName(a.cat).localeCompare(catName(b.cat)) || (a.nextDue || '').localeCompare(b.nextDue || '') }[F.sort] || ((a, b) => 0);
+  L.sort(srt);
+  const tot = L.reduce((s, b) => s + (+b.amount || 0), 0), yr = L.reduce((s, b) => s + monthlyEq(b) * 12, 0), over = L.filter(b => b.status === 'active' && b.nextDue && b.nextDue < td).length;
+  const accs = P('me').accounts.filter(a => !a.deleted && all.some(b => b.account === a.id));
+  const sel = (k, opts, lab) => `<select class="fchip sel" data-act="paF" data-k="${k}"><option value="">${lab}</option>${opts.map(([v, l]) => `<option value="${v}" ${F[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const row = b => { const t = typeOfBill(b), st = b.status === 'active' && b.nextDue ? billStatus(b) : null;
+    return `<div class="txc"><span class="itile" style="--ic:${catColor(b.cat)}">${catIcon(b.cat)}</span><div class="mid" data-act="editBill" data-id="${b.id}" data-kind="${b.kind || 'bill'}" style="cursor:pointer"><div class="t1">${esc(b.name)} <span class="pill">${TYPE_L[t][0]} ${TYPE_L[t][1]}</span>${b.status !== 'active' ? ` <span class="pill amb">${esc(b.status)}</span>` : ''}</div>
+      <div class="t2">${b.nextDue ? fmtDate(b.nextDue) : 'no date'}${st ? ` · <b class="${st.cls === 'red' ? 'dr' : ''}">${st.txt}</b>` : ''} · ${esc(CYCLES[b.cycle] || '')} · ${b.autopay ? '🔁 auto-debit' : '✋ pay by hand'}${b.account ? ' · ' + esc(accName('me', b.account)) : ''}</div></div>
+      <div class="r"><b class="num">${rs(b.amount)}${b.variable ? '*' : ''}</b><div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">${b.status === 'active' ? `<button class="btn sm pri" data-act="payBill" data-id="${b.id}" data-prof="me">Paid</button>` : ''}<button class="btn sm ghost" data-act="billMenu" data-id="${b.id}" title="Move / duplicate">⋯</button></div></div></div>`; };
+  let body = '';
+  if (F.sort === 'due') { const g = {}; L.forEach(b => { const k = !b.nextDue ? 'zz' : b.nextDue < td && b.status === 'active' ? '0' : b.nextDue.slice(0, 7); (g[k] = g[k] || []).push(b); });
+    body = Object.keys(g).sort().map(k => `<div class="dayh"><b>${k === '0' ? '⚠️ Overdue' : k === 'zz' ? 'No date' : ymLabel(k)}</b><span class="dr">${rs(g[k].reduce((s, b) => s + (+b.amount || 0), 0))}</span></div><div class="card" style="padding:4px 14px">${g[k].map(row).join('')}</div>`).join(''); }
+  else body = `<div class="card" style="padding:4px 14px">${L.map(row).join('')}</div>`;
+  return `<div class="txhead"><div class="th"><small>Payments shown</small><b class="num">${L.length}</b><span>${over ? over + ' overdue' : 'none overdue'}</span></div><div class="th"><small>Total of these</small><b class="num">${rsShort(tot)}</b><span>next payment each</span></div><div class="th"><small>Per year</small><b class="num">${rsShort(yr)}</b><span>${rsShort(yr / 12)} a month</span></div></div>
+  <input class="inp srch" placeholder="🔎  Search name, provider, category…" value="${esc(F.q || '')}" data-act="paQ">
+  <div class="chips">${PA_DUE.map(([v, l]) => `<button class="fchip ${F.due === v ? 'on' : ''}" data-act="paChip" data-k="due" data-v="${v}">${l}</button>`).join('')}</div>
+  <div class="chips">${[['', 'All types'], ['bill', '🧾 Bills'], ['sub', '🔁 Subscriptions'], ['fixed', '🔒 Fixed']].map(([v, l]) => `<button class="fchip ${(F.ty || '') === v ? 'on' : ''}" data-act="paChip" data-k="ty" data-v="${v}">${l} <i>${all.filter(b => !v || typeOfBill(b) === v).length}</i></button>`).join('')}</div>
+  <div class="chips">${sel('sort', [['due', 'Sort: due date'], ['amt', 'Sort: amount'], ['name', 'Sort: name'], ['cat', 'Sort: category']], 'Sort: due date').replace('<option value="">Sort: due date</option>', '')}${sel('cat', GROUPS.filter(g => ['exp', 'inv'].includes(g[3])).map(g => [g[0], g[2] + ' ' + g[1]]), 'Any category')}${accs.length ? sel('acc', accs.map(a => [a.id, a.name]), 'Any account') : ''}${sel('auto', [['auto', '🔁 Auto-debit'], ['manual', '✋ Pay by hand']], 'Auto or by hand')}${sel('st', [['active', 'Active'], ['inactive', 'Paused / done']], 'Any status')}
+    <button class="fchip" data-act="paAdd" data-k="bill">＋ Bill</button><button class="fchip" data-act="paAdd" data-k="sub">＋ Subscription</button><button class="fchip" data-act="paAdd" data-k="fixed">＋ Fixed</button></div>
+  <div class="small muted" style="margin:4px 2px 8px">Tap to edit · long-press or ⋯ to move to another type or duplicate · * amount changes each time</div>
+  ${L.length ? body : `<div class="card">${emptyBox('📅', 'Nothing matches', 'Change the filters above.', '')}</div>`}`;
+};
+TITLES.payall = 'All payments';
+NAV.forEach(n => { if (n[0] === 'upcoming') { n[0] = 'payall'; n[1] = 'All payments'; } });
+MORE_TILES.forEach(n => { if (n[0] === 'upcoming') { n[0] = 'payall'; n[2] = 'All payments'; } });
+Object.assign(ACT, {
+  billMenu: el => billMenu(el.dataset.id),
+  paChip: el => { const F = VIEW.sub.pa; F[el.dataset.k] = el.dataset.v; VIEW.keepScroll = true; rerender(); },
+  paAdd: el => el.dataset.k === 'fixed' ? fixedModal() : billModal(null, el.dataset.k),
+});
+Object.assign(CHANGE, { paF: el => { const F = VIEW.sub.pa; F[el.dataset.k] = el.value || (el.dataset.k === 'sort' ? 'due' : ''); VIEW.keepScroll = true; rerender(); } });
+document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.act === 'paQ') { clearTimeout(RD.pq); RD.pq = setTimeout(() => { VIEW.sub.pa.q = el.value; VIEW.keepScroll = true; rerender(); const i = $('[data-act=paQ]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 300); } });
+
+/* ============ v4.7 — 🧾 ITR: one record per financial year with status, details and several files ============ */
+const ITR_ST = { filed: ['✅', 'Filed', 'grn'], nil: ['0️⃣', 'Filed – nil / zero return', 'grn'], pending: ['⏳', 'Not filed yet', 'amb'], na: ['➖', 'Not needed this year', ''] };
+const ITR_FILES = ['Acknowledgement / ITR-V', 'Receipt', 'Filed ITR (PDF / JSON)', 'Computation', '143(1) intimation', 'Refund letter', 'Tax challan', 'Other'];
+const ay = y => 'AY ' + (y + 1) + '-' + String(y + 2).slice(2);
+const itrRec = (k, y) => docs(k).find(d => d.kind === 'itr' && d.fy === y);
+const itrDue = y => (y + 1) + '-07-31';
+function itrStatus(k, y) {
+  const r = itrRec(k, y); if (r && r.status) return r.status;
+  if (docs(k).some(d => d.kind === 'tax' && d.fy === y && /ITR-V/.test(d.docType || ''))) return 'filed';
+  return 'pending';
+}
+DOC_KINDS.splice(DOC_KINDS.findIndex(x => x[0] === 'check'), 0, ['itr', '🧾', 'ITR']);
+function itrTab(k) {
+  const y1 = fyNum(today()), ys = []; for (let y = y1; y >= Math.min(2018, ...docs(k).filter(d => d.kind === 'itr').map(d => d.fy)); y--) ys.push(y);
+  const rows = ys.map(y => {
+    const r = itrRec(k, y), st = itrStatus(k, y), cur = y === y1, [ic, lab, cls] = ITR_ST[cur && !r ? 'pending' : st];
+    const files = (r && r.files || []).filter(f => !f.deleted), old = docs(k).filter(d => d.kind === 'tax' && d.fy === y && /ITR-V/.test(d.docType || '') && d.file);
+    const due = !r && st === 'pending' ? (cur ? 'year still running · due ' + fmtDate(itrDue(y)) : today() > itrDue(y) ? 'due date ' + fmtDate(itrDue(y)) + ' has passed' : 'due ' + fmtDate(itrDue(y))) : '';
+    return `<div class="txc" data-act="itrOpen" data-prof="${k}" data-y="${y}" style="cursor:pointer"><span class="itile" style="--ic:${cls === 'grn' ? '#10b981' : cls === 'amb' ? '#f59e0b' : '#94a3b8'}">${ic}</span><div class="mid"><div class="t1">${fyL(y)} <span class="muted small">${ay(y)}</span> · ${esc(cur && !r ? 'Current year' : lab)}</div>
+      <div class="t2">${r ? [r.res, r.form, r.filedOn && 'filed ' + fmtDate(r.filedOn), r.ackNo && 'Ack ' + r.ackNo, r.refund ? 'refund ' + rs(r.refund) : '', r.taxPaid ? 'tax paid ' + rs(r.taxPaid) : ''].filter(Boolean).map(esc).join(' · ') : esc(due)}</div>
+      <div class="t2">${files.length + old.length ? '📎 ' + (files.length + old.length) + ' file' + (files.length + old.length > 1 ? 's' : '') : '<span class="muted">no files yet</span>'}${r && r.note ? ' · ' + esc(r.note) : ''}</div></div><span class="chev">›</span></div>`;
+  }).join('');
+  const done = ys.filter(y => ['filed', 'nil', 'na'].includes(itrStatus(k, y)) && itrRec(k, y)).length;
+  return `<div class="flex small" style="margin-bottom:8px"><span class="muted">One row per financial year. Tap a year to set its status and add the acknowledgement, receipt and other papers.</span><span class="sp"></span><b>${done} of ${ys.length} years recorded</b></div><div class="card" style="padding:4px 14px">${rows}</div>`;
+}
+function itrModal(k, y) {
+  const D = P(k).docs = P(k).docs || []; let r = itrRec(k, y);
+  const d = r ? JSON.parse(JSON.stringify(r)) : { id: 'itr_' + k + '_' + y, kind: 'itr', fy: y, status: y === fyNum(today()) ? 'pending' : itrStatus(k, y), res: '', form: '', filedOn: '', ackNo: '', refund: '', taxPaid: '', note: '', files: [] };
+  const old = docs(k).filter(x => x.kind === 'tax' && x.fy === y && /ITR-V/.test(x.docType || '') && x.file);
+  const inp = (f, l, ty = 'text', ph = '') => `<div class="fld"><label>${l}</label><input class="inp" data-it="${f}" type="${ty}" value="${esc(d[f] ?? '')}" placeholder="${esc(ph)}"></div>`;
+  const sel = (f, l, opts) => `<div class="fld"><label>${l}</label><select class="inp" data-it="${f}">${opts.map(([v, t]) => `<option value="${v}" ${String(d[f] || '') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
+  const fileRow = f => { const loc = DOCF.local.has(f.fid); return `<div class="row"><div class="ico">📎</div><div class="mid"><div class="t1">${esc(f.label)} <span class="muted small">${esc(f.name)}</span></div><div class="t2">${(f.size / 1048576).toFixed(2)} MB · ${loc ? '📱 this device' : ''}${loc && f.drive ? ' + ' : ''}${f.drive ? '☁️ Drive' : ''}${!loc && !f.drive ? '⚠️ on another device' : ''}</div></div>${loc || f.drive ? `<button class="btn sm pri" data-itopen="${f.fid}">${loc ? 'Open' : '☁️ Get'}</button><button class="btn sm ghost" data-itdl="${f.fid}">⬇</button>` : ''}<button class="btn sm ghost" data-itdel="${f.fid}">✕</button></div>`; };
+  const body = () => `<div class="frow">${sel('status', 'Status', Object.entries(ITR_ST).map(([v, x]) => [v, x[0] + ' ' + x[1]]))}${sel('res', 'Residential status', [['', '—'], ['NRI', 'NRI (non-resident)'], ['RNOR', 'RNOR'], ['ROR', 'Resident (ROR)']])}${sel('form', 'ITR form', [['', '—'], ['ITR-1', 'ITR-1'], ['ITR-2', 'ITR-2'], ['ITR-3', 'ITR-3'], ['ITR-4', 'ITR-4']])}</div>
+    <div class="frow mt">${inp('filedOn', 'Filed on', 'date')}${inp('ackNo', 'Acknowledgement no.')}</div>
+    <div class="frow mt">${inp('refund', 'Refund (₹)', 'number')}${inp('taxPaid', 'Tax paid (₹)', 'number')}${inp('note', 'Note', 'text', 'e.g. filed by CA, nil return')}</div>
+    <div class="sec">Files for ${fyL(y)}</div><div class="list" id="it_files">${d.files.filter(f => !f.deleted).map(fileRow).join('')}${old.map(o => `<div class="row"><div class="ico">📄</div><div class="mid"><div class="t1">${esc(o.title || 'ITR-V')}</div><div class="t2">saved earlier under Tax</div></div><button class="btn sm pri" data-act="docOpen" data-prof="${k}" data-id="${o.id}">Open</button></div>`).join('') || (d.files.filter(f => !f.deleted).length ? '' : '<div class="muted small">No files yet.</div>')}</div>
+    <div class="frow mt"><div class="fld"><label>Add a file — what is it?</label><select class="inp" id="it_lab">${ITR_FILES.map(x => `<option>${x}</option>`).join('')}</select></div><div class="fld"><label>File (PDF, photo or JSON)</label><input class="inp" id="it_file" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.json,.zip"></div></div>
+    <div class="small muted mt">🔒 Encrypted on this device; sent to your Drive only when “Also upload document files” is on in ⟳ Sync & Update.</div>`;
+  const keepForm = m => $$('[data-it]', m).forEach(i => d[i.dataset.it] = i.type === 'number' ? (i.value === '' ? '' : +i.value) : i.value.trim());
+  const mount = m => {
+    $('#it_file', m).onchange = async e => { keepForm(m); const fl = [...e.target.files]; for (const f of fl) { if (f.size > 25 * 1048576) { toast(f.name + ' is larger than 25 MB'); continue; } const fid = 'itf_' + uid(); await fileSaveLocal(fid, new Uint8Array(await f.arrayBuffer())); d.files.push({ fid, label: $('#it_lab', m).value, name: f.name, size: f.size, type: f.type || 'application/pdf', drive: false }); } $('.mb', m).innerHTML = body(); mount(m); };
+    $$('[data-itopen]', m).forEach(b => b.onclick = () => openItrFile(d, b.dataset.itopen, false));
+    $$('[data-itdl]', m).forEach(b => b.onclick = () => openItrFile(d, b.dataset.itdl, true));
+    $$('[data-itdel]', m).forEach(b => b.onclick = () => { keepForm(m); const f = d.files.find(x => x.fid === b.dataset.itdel); if (f) f.deleted = true; $('.mb', m).innerHTML = body(); mount(m); });
+  };
+  modal(`🧾 ITR · ${fyL(y)} (${ay(y)})`, body(), `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="it_s">Save</button>`, { wide: true, onMount: m => {
+    mount(m);
+    $('#it_s', m).onclick = async () => { keepForm(m);
+      for (const f of d.files.filter(x => x.deleted)) { await IDB.del('file_' + f.fid); DOCF.local.delete(f.fid); if (f.drive) { try { await callScript({ key: S.settings.sync.key, action: 'delFile', name: 'f_' + f.fid }); } catch (e) { } } }
+      d.files = d.files.filter(x => !x.deleted); d.title = 'ITR ' + fyL(y);
+      if (r) { Object.keys(r).forEach(x => { if (x !== 'id') delete r[x]; }); Object.assign(r, d); touch(r); } else { r = touch(d); D.push(r); }
+      save(); closeModal(); rerender(); toast('Saved'); };
+  } });
+}
+async function openItrFile(d, fid, dl) {
+  const f = (d.files || []).find(x => x.fid === fid); if (!f) return;
+  try {
+    let u8 = await fileLoadLocal(fid);
+    if (!u8) { if (!f.drive) { toast('This file is only on the device where it was added.'); return; } toast('Downloading from your Drive…'); u8 = await fileGetDrive({ id: fid }); await fileSaveLocal(fid, u8); }
+    const blob = new Blob([u8], { type: f.type || 'application/pdf' });
+    if (dl) { download(f.name, blob); return; }
+    const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+  } catch (e) { toast(oldScript(e) ? SCRIPT_MSG : e.message, 8000); }
+}
+// ITR files go to Drive with the other documents
+const _uploadPending = uploadPendingFiles;
+uploadPendingFiles = async function (onStep) {
+  let n = await _uploadPending(onStep);
+  const todo = PROFS.flatMap(k => docs(k).filter(d => d.kind === 'itr').flatMap(d => (d.files || []).filter(f => !f.drive).map(f => ({ d, f }))));
+  for (const { d, f } of todo) { if (!(await IDB.get('file_' + f.fid))) continue; if (onStep) onStep('Uploading ITR file…'); try { await filePutDrive({ id: f.fid }); f.drive = true; touch(d); n++; } catch (e) { if (oldScript(e)) throw new Error(SCRIPT_MSG); throw e; } }
+  if (todo.length) save(); return n;
+};
+const _refreshLocal = refreshLocalFiles;
+refreshLocalFiles = async function () { await _refreshLocal(); for (const d of PROFS.flatMap(k => docs(k).filter(x => x.kind === 'itr'))) for (const f of d.files || []) if (!DOCF.local.has(f.fid) && await IDB.get('file_' + f.fid)) DOCF.local.add(f.fid); };
+
+// Documents page tab
+const _stmtsV3 = VIEWS.stmts;
+VIEWS.stmts = () => {
+  if ((VIEW.sub.dSec || 'bank') !== 'itr') return _stmtsV3();
+  if (!DOCF.loaded) refreshLocalFiles().then(() => { if (VIEW.tab === 'stmts') rerender(); });
+  const k = VIEW.sub.stProf || 'me';
+  const tabs = `<div class="tabs">${DOC_KINDS.map(([id, ic, l]) => `<button class="tab ${id === 'itr' ? 'on' : ''}" data-act="rdSec" data-base="dSec" data-v="${id}">${ic} ${l}</button>`).join('')}</div>`;
+  const who = `<div class="flex" style="margin-bottom:12px"><div class="seg">${[['me', 'Me'], ['wife', wifeName()], ['parents', 'Mom & Dad']].map(([p, l]) => `<button class="${k === p ? 'on' : ''}" data-act="stProf" data-p="${p}">${esc(l)}</button>`).join('')}</div></div>`;
+  return tabs + who + itrTab(k);
+};
+// FY checklist uses the ITR record
+const _checklist2 = checklist;
+checklist = k => { const y = VIEW.sub.chkFy ?? fyNum(today()) - 1, st = itrStatus(k, y), ok = ['filed', 'nil', 'na'].includes(st) && (itrRec(k, y) || st === 'filed');
+  const row = `<div class="txc" data-act="itrOpen" data-prof="${k}" data-y="${y}" style="cursor:pointer"><span class="itile" style="--ic:${ok ? '#10b981' : '#ef4444'}">${ok ? '✅' : '❌'}</span><div class="mid"><div class="t1">🧾 ITR for ${fyL(y)}</div><div class="t2">${esc(ITR_ST[st][1])} · tap to open</div></div></div>`;
+  return _checklist2(k).replace(/<div class="txc"((?!<div class="txc")[\s\S])*?ITR-V \/ acknowledgement((?!<div class="txc")[\s\S])*?<\/div><\/div><\/div>/, row); };
+// NRI tax pack: ITR status line
+const _taxV2 = VIEWS.tax;
+VIEWS.tax = () => { const y = VIEW.sub.taxFy ?? fyNum(today()) - 1, r = itrRec('me', y), st = itrStatus('me', y);
+  return `<div class="alert ${['filed', 'nil'].includes(st) ? 'grn' : 'amb'}" style="margin-bottom:12px">${ITR_ST[st][0]} <div><b>ITR ${fyL(y)} (${ay(y)}): ${esc(ITR_ST[st][1])}</b>${r ? ' · ' + [r.res, r.form, r.filedOn && 'filed ' + fmtDate(r.filedOn), r.ackNo && 'Ack ' + r.ackNo].filter(Boolean).map(esc).join(' · ') : ''}</div><span class="sp"></span><button class="btn sm" data-act="itrOpen" data-prof="me" data-y="${y}">Open</button></div>` + _taxV2(); };
+// Home: reminder in June and July
+const _dashV2 = VIEWS.dashboard;
+VIEWS.dashboard = () => {
+  const td = today(), m = +td.slice(5, 7), y = fyNum(td) - 1; let rem = '';
+  if (m >= 6 && m <= 7) { const who = [['me', 'Your'], ['wife', wifeName() + '’s']].filter(([k]) => k === 'me' || docs(k).some(d => d.kind === 'itr')).filter(([k]) => itrStatus(k, y) === 'pending');
+    if (who.length) rem = `<div class="alert amb" style="margin-bottom:14px">🧾 <div><b>${who.map(w => esc(w[1])).join(' and ')} ITR for ${fyL(y)} isn’t marked filed yet</b> — usually due ${fmtDate(itrDue(y))}.</div><span class="sp"></span><button class="btn sm pri" data-act="itrOpen" data-prof="${who[0][0]}" data-y="${y}">Open</button></div>`; }
+  return rem + _dashV2();
+};
+Object.assign(ACT, { itrOpen: el => { if (!DOCF.loaded) refreshLocalFiles(); itrModal(el.dataset.prof || 'me', +el.dataset.y); } });
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
