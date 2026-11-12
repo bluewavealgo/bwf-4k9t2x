@@ -886,7 +886,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.10';
+const APP_VER = '3.11';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -3298,10 +3298,14 @@ function ensureMembers() {
   if (ch) save();
 }
 const findMember = (prof, id) => (P(prof).members || []).find(x => x.id === id);
+// which "linked to" lists are open on this device (remembered per device)
+const LNK = (() => { try { return JSON.parse(localStorage.getItem('bwf_lnk_open') || '{}'); } catch (e) { return {}; } })();
+const lnkSave = () => { try { localStorage.setItem('bwf_lnk_open', JSON.stringify(LNK)); } catch (e) {} };
 function contactLinks(prof, m, kind) {
   const list = kind === 'email' ? (m.emails || []) : (m.phones || []);
   return list.map(x => { const exp = x.validTill ? daysBetween(today(), x.validTill) : null; return `<div class="row" style="cursor:pointer;align-items:flex-start" data-act="${kind === 'email' ? 'emailEdit' : 'phoneEdit'}" data-prof="${prof}" data-m="${m.id}" data-id="${x.id}"><div class="ico">${kind === 'email' ? '✉️' : '📱'}</div><div class="mid"><div class="t1" style="white-space:normal;word-break:break-all">${kind === 'email' ? esc(x.email) : esc(fmtPhone(x.number))} <span class="pill">${kind === 'email' ? esc(x.provider || '') : esc(x.operator || '') + (x.type ? ' · ' + esc(x.type) : '')}</span>${x.primary ? ' <span class="pill gold">Main</span>' : ''}${exp != null ? ` <span class="pill ${exp < 0 ? 'red pulse' : exp <= 5 ? 'amb' : 'grn'}">${exp < 0 ? 'Expired' : 'Valid till ' + fmtDateShort(x.validTill)}</span>` : ''}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${(x.linked || []).map(l => `<span class="pill vio">${LINK_ICON[l] || '📌'} ${esc(l)}</span>`).join('')}${(x.extra || []).map(l => `<span class="pill acc">📌 ${esc(l)}</span>`).join('') || ((x.linked || []).length ? '' : '<span class="muted small">Not linked to anything yet</span>')}</div>${x.details ? `<div class="t2" style="white-space:normal;margin-top:5px">${esc(x.details)}</div>` : ''}</div>${x.rechargeAmt ? `<div class="r num b">${rs(x.rechargeAmt)}</div>` : ''}</div>`; }).join('');
+    ${(() => { const n = (x.linked || []).length + (x.extra || []).length, open = !!LNK[x.id]; return n ? `<button class="btn sm ghost lnkbtn" data-act="lnkTog" data-id="${x.id}" style="margin-top:6px;text-transform:none;letter-spacing:0">${open ? '🔼 Hide links' : '🔗 View links (' + n + ')'}</button>` : ''; })()}
+    <div style="display:${!((x.linked || []).length + (x.extra || []).length) || LNK[x.id] ? 'flex' : 'none'};flex-wrap:wrap;gap:5px;margin-top:6px">${(x.linked || []).map(l => `<span class="pill vio">${LINK_ICON[l] || '📌'} ${esc(l)}</span>`).join('')}${(x.extra || []).map(l => `<span class="pill acc">📌 ${esc(l)}</span>`).join('') || ((x.linked || []).length ? '' : '<span class="muted small">Not linked to anything yet</span>')}</div>${x.details ? `<div class="t2" style="white-space:normal;margin-top:5px">${esc(x.details)}</div>` : ''}</div>${x.rechargeAmt ? `<div class="r num b">${rs(x.rechargeAmt)}</div>` : ''}</div>`; }).join('');
 }
 function contactsView(profs) {
   ensureMembers();
@@ -3315,13 +3319,14 @@ function contactsView(profs) {
   const addProf = profs.length === 1 ? profs[0] : 'parents';
   return `${profs.length > 1 ? `<div class="grid g4" style="margin-bottom:16px">${kpi('👥 People', all.length, '', 'vio')}${kpi('📱 Mobile numbers', nP, '', 'acc')}${kpi('✉️ Email IDs', nE, '', 'gold')}${kpi('🔗 Links recorded', rev.length, 'bank, gas, UPI, Aadhaar…', 'grn')}</div>` : ''}
   <div class="alert acc">🔐 <div>Save numbers, email IDs and what they're linked to — <b>never passwords, PINs or OTPs</b>. Everything here is encrypted on your device with your PIN.</div><span class="sp"></span><button class="btn sm" data-act="memberEdit" data-prof="${addProf}">＋ Person</button></div>
+  ${rev.length ? `<div class="flex" style="justify-content:flex-end;gap:6px;margin:0 0 10px"><button class="btn sm" data-act="lnkAll" data-v="1" style="text-transform:none;letter-spacing:0">🔗 Show all links</button><button class="btn sm" data-act="lnkAll" data-v="0" style="text-transform:none;letter-spacing:0">🔼 Hide all links</button></div>` : ''}
   <div class="grid g2">${all.map(({ p, m }) => `<div class="card"><h3><span style="font-size:26px">${ROLE_ICON[m.role] || '🧑'}</span><span style="font-size:17px">${esc(m.name)}</span>${p === 'parents' ? '<span class="pill vio">Parents</span>' : p === 'wife' ? '<span class="pill vio">Wife</span>' : m.role === 'self' ? '<span class="pill gold">You</span>' : ''}<span class="sp"></span><button class="btn sm ghost" data-act="memberEdit" data-prof="${p}" data-id="${m.id}">Edit</button></h3>
     ${m.notes ? `<div class="small muted" style="margin:-4px 0 10px">${esc(m.notes)}</div>` : ''}
     <div class="flex" style="margin-bottom:4px"><b class="small" style="flex:1;color:var(--tx2)">📱 MOBILE NUMBERS</b><button class="btn sm pri" data-act="phoneEdit" data-prof="${p}" data-m="${m.id}">＋ Number</button></div>
     <div class="list">${contactLinks(p, m, 'phone') || '<div class="muted small" style="padding:8px 0">No numbers yet.</div>'}</div>
     <div class="flex" style="margin:14px 0 4px"><b class="small" style="flex:1;color:var(--tx2)">✉️ EMAIL IDS</b><button class="btn sm pri" data-act="emailEdit" data-prof="${p}" data-m="${m.id}">＋ Email</button></div>
     <div class="list">${contactLinks(p, m, 'email') || '<div class="muted small" style="padding:8px 0">No email IDs yet.</div>'}</div></div>`).join('')}</div>
-  <div class="card mt"><h3>🔗 What is linked where <small>${shown.length} links</small><span class="sp"></span><input class="inp" style="width:220px" placeholder="🔎 Search: bank, gas, 98765…" value="${esc(VIEW.sub.cq || '')}" data-act="cq"></h3>${shown.length ? `<div class="tblw"><table class="t"><thead><tr><th>Linked to</th><th>Number / email</th><th>Whose</th><th>Details</th></tr></thead><tbody>${shown.map(x => `<tr><td><b>${LINK_ICON[x.l] || '📌'} ${esc(x.l)}</b></td><td class="num" style="word-break:break-all">${x.kind} ${esc(x.v)}</td><td>${esc(x.m.name)}</td><td class="small muted">${esc(x.d || '')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="muted small">${rev.length ? 'Nothing matches your search.' : 'Tick “linked to” on each number and email to build this list.'}</div>`}</div>`;
+  <div class="card mt"><h3>🔗 What is linked where <small>${shown.length} links</small><span class="sp"></span><button class="btn sm ghost" data-act="lnkTog" data-id="__table" style="text-transform:none;letter-spacing:0">${LNK.__table || q ? '🔼 Hide' : '👁️ View'}</button><input class="inp" style="width:220px" placeholder="🔎 Search: bank, gas, 98765…" value="${esc(VIEW.sub.cq || '')}" data-act="cq"></h3>${!(LNK.__table || q) ? `<div class="muted small">${rev.length} links hidden — tap View or search to see them.</div>` : shown.length ? `<div class="tblw"><table class="t"><thead><tr><th>Linked to</th><th>Number / email</th><th>Whose</th><th>Details</th></tr></thead><tbody>${shown.map(x => `<tr><td><b>${LINK_ICON[x.l] || '📌'} ${esc(x.l)}</b></td><td class="num" style="word-break:break-all">${x.kind} ${esc(x.v)}</td><td>${esc(x.m.name)}</td><td class="small muted">${esc(x.d || '')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="muted small">${rev.length ? 'Nothing matches your search.' : 'Tick “linked to” on each number and email to build this list.'}</div>`}</div>`;
 }
 function familyView() { return contactsView(['parents']); }
 VIEWS.contacts = () => contactsView(['me', 'wife', 'parents']);
@@ -3393,6 +3398,10 @@ Object.assign(PACT, {
   memberEdit: el => memberModal(el.dataset.id, el.dataset.prof || 'parents'),
   phoneEdit: el => phoneModal(el.dataset.m, el.dataset.id, el.dataset.prof || 'parents'),
   emailEdit: el => emailModal(el.dataset.m, el.dataset.id, el.dataset.prof || 'parents'),
+});
+Object.assign(PACT, {
+  lnkTog: el => { const k = el.dataset.id; if (k === '__table') { const open = LNK.__table || (VIEW.sub.cq || '').trim(); LNK.__table = !open; if (open) VIEW.sub.cq = ''; } else LNK[k] = !LNK[k]; lnkSave(); VIEW.keepScroll = true; rerender(); },
+  lnkAll: el => { const on = el.dataset.v === '1'; PROFS.forEach(p => live(P(p).members || []).forEach(m => [...(m.phones || []), ...(m.emails || [])].forEach(x => { if (on) LNK[x.id] = true; else delete LNK[x.id]; }))); LNK.__table = on; if (!on) VIEW.sub.cq = ''; lnkSave(); VIEW.keepScroll = true; rerender(); },
 });
 Object.assign(PCHANGE, { cq: el => { VIEW.sub.cq = el.value; rerender(); const i = $('[data-act=cq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } });
 
