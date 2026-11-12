@@ -606,6 +606,25 @@ tr.on td{background:color-mix(in srgb,var(--acc,#3b82f6) 12%,transparent)}
 .cstat{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--tx2)}.cstat i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
 @media(max-width:700px){.ctr.home{margin-left:10px}.ctr .r .t2{display:none}}
 .ctr.home .mid{flex:1;min-width:0}
+/* ---- v4.10 folded filters (phone) ---- */
+details.ffold{margin:6px 0 12px;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+details.ffold>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;font-weight:700;font-size:13.5px}
+details.ffold>summary::-webkit-details-marker{display:none}
+details.ffold>summary i{font-style:normal;font-size:11px;font-weight:800;padding:1px 8px;border-radius:20px;background:var(--acc,#3b82f6);color:#fff}
+details.ffold>summary b{font-size:12px;color:var(--acc,#3b82f6)}
+details.ffold>summary .sp{flex:1}
+details.ffold[open]>summary{border-bottom:1px solid var(--line)}
+details.ffold>*:not(summary){margin:8px 10px!important}
+@media(max-width:700px){
+  .top h1{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+  .seg{flex-wrap:nowrap!important;overflow-x:auto;max-width:100%;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{white-space:nowrap;flex:none}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+  details.ifold{margin:0 0 12px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+  details.ifold>summary{list-style:none;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;display:flex;gap:8px}
+  details.ifold>summary::-webkit-details-marker{display:none}
+  details.ifold>summary b{margin-left:auto;font-size:12px;color:var(--acc,#3b82f6)}
+  details.ifold>.alert{margin:0!important;border:0;border-top:1px solid var(--line);border-radius:0 0 14px 14px}
+}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -1034,7 +1053,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.9';
+const APP_VER = '4.10';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -6773,6 +6792,49 @@ function contractsTab() {
 { const old = VIEWS.me;
   VIEWS.me = () => { if (VIEW.sub.meSec !== 'ctr') return old(); const h = old(); return h.slice(0, h.indexOf('</div>') + 6) + contractsTab(); };
 }
+
+/* ============ v4.10 — phone: filters fold into one "Filters" button; tidy spacing ============ */
+function isFilterRow(el) {
+  if (!el || el.nodeType !== 1 || el.tagName === 'DETAILS') return false;
+  if (el.querySelector('[data-act*=xport], [data-act*=CSV], .btn.pri')) return false;
+  if (el.classList.contains('chips')) return true;
+  const kids = [...el.children];
+  return kids.length >= 2 && kids.filter(k => k.matches('select.fchip, select.inp, .fchip')).length >= 2 && !el.querySelector('input.srch, input[data-act]') ;
+}
+function foldFilters(root) {
+  if (!root || innerWidth >= 700) return;
+  const seen = new Set();
+  root.querySelectorAll('.chips, select.fchip').forEach(x => {
+    const row = x.classList.contains('chips') ? x : x.parentElement; if (!row || seen.has(row) || !isFilterRow(row)) return;
+    // gather consecutive filter rows
+    let first = row; while (isFilterRow(first.previousElementSibling)) first = first.previousElementSibling;
+    const group = []; for (let e = first; e && isFilterRow(e); e = e.nextElementSibling) group.push(e);
+    group.forEach(g => seen.add(g));
+    const items = group.reduce((s, g) => s + g.querySelectorAll('.fchip, button, select').length, 0);
+    if (items < 5) return;
+    const on = group.reduce((s, g) => s + [...g.querySelectorAll('.fchip.on, button.on')].filter(b => b !== b.parentElement.firstElementChild).length + [...g.querySelectorAll('select')].filter(s2 => s2.selectedIndex > 0 && !/sort/i.test(s2.dataset.k || '')).length, 0);
+    const key = 'fold_' + VIEW.tab + '_' + [...root.querySelectorAll('details.ffold')].length;
+    const d = document.createElement('details'); d.className = 'ffold'; d.dataset.fk = key; if (VIEW.sub[key]) d.open = true;
+    d.innerHTML = `<summary><span>⚙️ Filters</span>${on ? `<i>${on} on</i>` : ''}<span class="sp"></span><b>${d.open ? 'Hide' : 'Show'}</b></summary>`;
+    first.before(d); group.forEach(g => d.appendChild(g));
+    d.addEventListener('toggle', () => { VIEW.sub[key] = d.open; const b = d.querySelector('summary b'); if (b) b.textContent = d.open ? 'Hide' : 'Show'; });
+  });
+}
+{ const _r = render;
+  render = function () { _r.apply(this, arguments); try { foldFilters($('#content')); } catch (e) { } };
+}
+// long "how it works" notes fold into a small line on the phone
+function foldInfo(root) {
+  if (!root || innerWidth >= 700) return;
+  root.querySelectorAll('.alert.acc, .alert.blu, .alert.vio').forEach((a, i) => {
+    if (a.closest('details') || a.querySelector('button, a.btn, select, input') || a.textContent.trim().length < 170) return;
+    const key = 'info_' + VIEW.tab + '_' + i, d = document.createElement('details'); d.className = 'ifold'; if (VIEW.sub[key]) d.open = true;
+    d.innerHTML = `<summary>ℹ️ <span>How this works</span><b>${d.open ? 'Hide' : 'Read'}</b></summary>`;
+    a.before(d); d.appendChild(a);
+    d.addEventListener('toggle', () => { VIEW.sub[key] = d.open; d.querySelector('summary b').textContent = d.open ? 'Hide' : 'Read'; });
+  });
+}
+{ const _r2 = render; render = function () { _r2.apply(this, arguments); try { foldInfo($('#content')); } catch (e) { } }; }
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
