@@ -886,7 +886,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.12';
+const APP_VER = '3.13';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1106,7 +1106,7 @@ function seedState() {
     },
     profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('ABB'), parents: EMPTY_PROFILE('Parents') },
   };
-  curP = 'me'; s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('Cash', 'Cash', 'Cash wallet')];
+  curP = 'me'; s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('HDFC', 'Savings', 'HDFC Savings'), acc('Cash', 'Cash', 'Cash wallet')];
   curP = 'parents'; s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Dad PNB (pension)')];
   s.profiles.parents.members = [{ id: 'seed_parents_dad', role: 'dad', name: 'Dad', phones: [], notes: '', updatedAt: T0 }, { id: 'seed_parents_mom', role: 'mom', name: 'Mom', phones: [], notes: '', updatedAt: T0 }];
   curP = 'wife'; s.profiles.wife.accounts = [acc('SBI', 'Savings', 'ABB SBI'), acc('Axis', 'Savings', 'ABB Axis', { status: 'closed' }), acc('Cash', 'Cash', 'ABB cash')];
@@ -1186,6 +1186,9 @@ function migrate() { const d = seedState(); S.settings = Object.assign(d.setting
     (pr.members || []).forEach(m => { if (/^papa$/i.test(m.name || '')) { m.name = 'Dad'; touch(m); } else if (/^mummy$/i.test(m.name || '')) { m.name = 'Mom'; touch(m); } });
     if (/mummy|papa/i.test(pr.name || '')) pr.name = 'Mom & Dad';
     if (/mummy|papa/i.test(S.settings.parentsName || '')) S.settings.parentsName = 'Mom & Dad';
+  }
+  if (!S.settings.hdfcV) { S.settings.hdfcV = 1;
+    if (!(S.profiles.me.accounts || []).some(a => a.id === 'seed_me_hdfc_savings') && !live(S.profiles.me.accounts || []).some(a => /HDFC/i.test(a.bank + ' ' + a.name))) S.profiles.me.accounts.push(touch({ id: 'seed_me_hdfc_savings', bank: 'HDFC', type: 'Savings', name: 'HDFC Savings', last4: '', status: 'active' }));
   }
   if (!S.settings.abbV) { S.settings.abbV = 1;
     if (!S.settings.wifeName || /^ankita/i.test(S.settings.wifeName)) S.settings.wifeName = 'ABB';
@@ -4703,7 +4706,9 @@ function upiBankAccs(k, r) {
   if (!r.last) return accs;
   const w = compact((r.bank || '').split(/\s+/)[0] || '');
   const hit = accs.filter(a => a.last4 && a.last4.endsWith(r.last) && (r.last.length >= 4 || !w || compact(a.bank + a.name).includes(w)));
-  return hit;
+  if (hit.length || r.last.length >= 4 || !w) return hit;
+  // only the last 2 digits printed (Paytm) and the account number not filled in yet → same bank
+  return accs.filter(a => !a.last4 && compact(a.bank + a.name).includes(w));
 }
 /* work out what an app statement would do — nothing is changed here */
 function upiPlan(k, u, extra) {
