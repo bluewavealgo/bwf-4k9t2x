@@ -599,6 +599,13 @@ tr.on td{background:color-mix(in srgb,var(--acc,#3b82f6) 12%,transparent)}
 .lgrow{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx2);margin-top:10px}.lgrow i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .hrow .dpct{flex-direction:column-reverse}.hrow .dsvg{width:200px}.hrow .dleg{width:100%}
 .hacc .sp,.hupr .sp{flex:1}
+/* ---- v4.9 contracts ---- */
+.ctrl{display:flex;flex-direction:column;gap:10px}
+.ctr .mid .t1{font-size:14px}.ctr .t2{font-size:12px;color:var(--tx3)}.ctr .r{text-align:right;flex:none}
+.ctr.home{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;border:1px dashed var(--line);background:var(--card2);cursor:pointer;margin-left:22px}
+.cstat{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--tx2)}.cstat i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
+@media(max-width:700px){.ctr.home{margin-left:10px}.ctr .r .t2{display:none}}
+.ctr.home .mid{flex:1;min-width:0}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -1027,7 +1034,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.8.1';
+const APP_VER = '4.9';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -6710,6 +6717,61 @@ function dueByMonth(list, months) { return months.map(k => { const [f, t] = mont
     const top = accs.sort((x, y) => (y.vals[y.vals.length - 1] || 0) - (x.vals[x.vals.length - 1] || 0)).slice(0, 6);
     return h + `<div class="card mt"><h3>🏦 Account balances <small>month-end, from your statements</small></h3>${areaChart(ms.map(shortM), top.map((x, i) => ({ name: x.a.name + (x.p === 'wife' ? ' (' + wifeName() + ')' : ''), color: CAT_COLORS[i % CAT_COLORS.length], values: x.vals })), { zero: false })}</div>`;
   };
+}
+
+/* ============ v4.9 — 🚢 Contracts: each ship and each leave, side by side ============ */
+ME_TABS.splice(1, 0, ['ctr', '🚢 Contracts']);
+function ctrPeriods() {
+  const L = ships(), sal = salaryTx('me'), td = today(), out = [];
+  if (L.length) {
+    L.forEach((s, i) => {
+      const end = shipEnd(s), cr = sal.filter(t => { const sh = shipOf(t.date, true); return sh && sh.id === s.id; });
+      out.push({ kind: 'sea', id: s.id, n: i + 1, label: 'Ship ' + (i + 1), name: s.vessel || 'Vessel', sub: [s.rank, s.company].filter(Boolean).join(' · '), f: s.on, t: end, now: !s.off, earned: sumAmt(cr), credits: cr.length });
+      const nx = L[i + 1];
+      if (s.off && s.off < td) { const lf = addDays(s.off, 1), lt = nx ? addDays(nx.on, -1) : td; if (lt >= lf) out.push({ kind: 'home', label: 'Leave', name: nx ? 'Between Ship ' + (i + 1) + ' and ' + (i + 2) : 'At home now', f: lf, t: lt, now: !nx }); }
+    });
+    return { list: out, est: false };
+  }
+  contracts(sal).slice().reverse().forEach((c, i, a) => {
+    const f = addDays(c.first, -30), t = c.last;
+    out.push({ kind: 'sea', label: 'Contract ' + (i + 1), name: fmtDate(c.first).slice(3) + ' → ' + fmtDate(c.last).slice(3), sub: c.tx.length + ' salary credits', f, t, earned: sumAmt(c.tx), credits: c.tx.length });
+    const nx = a[i + 1]; const lf = addDays(t, 1), lt = nx ? addDays(addDays(nx.first, -30), -1) : td; if (lt >= lf) out.push({ kind: 'home', label: 'Gap', name: nx ? 'Between contracts' : 'Since last salary', f: lf, t: lt, now: !nx });
+  });
+  return { list: out, est: true };
+}
+function ctrMoney(p) {
+  const T = totals(txIn('me', p.f, p.t)), par = parentsTx(p.f, p.t).reduce((s, t) => s + t.amount, 0), days = daysBetween(p.f, p.t) + 1, mo = days / 30.44;
+  const earned = p.kind === 'sea' ? p.earned : sumAmt(salaryTx('me').filter(t => t.date >= p.f && t.date <= p.t));
+  const spent = Math.max(0, T.exp - par), kept = earned - T.exp - T.abb;
+  return { days, mo, earned, spent, par, abb: T.abb, inv: T.inv, kept, left: earned - spent - par - T.abb - T.inv, rate: earned > 0 ? kept / earned : null, perMo: (T.exp + T.abb) / Math.max(mo, .5) };
+}
+function contractsTab() {
+  const { list, est } = ctrPeriods();
+  if (!list.length) return `<div class="card">${emptyBox('🚢', 'No contracts yet', 'Paste your ships from Sea Days Ledger (Income tab), or import statements with salary credits.', `<button class="btn sm pri" data-act="shipPaste">⬇ Paste ships</button>`)}</div>`;
+  const rows = list.map(p => Object.assign(p, { m: ctrMoney(p) })), sea = rows.filter(r => r.kind === 'sea'), home = rows.filter(r => r.kind === 'home');
+  const sum = (L, k) => L.reduce((s, r) => s + r.m[k], 0), moS = sum(sea, 'mo'), moH = sum(home, 'mo');
+  const totE = sum(sea, 'earned'), totK = rows.reduce((s, r) => s + r.m.kept, 0);
+  const seaPm = moS ? (sum(sea, 'spent') + sum(sea, 'par') + sum(sea, 'abb')) / moS : 0, homePm = moH ? (sum(home, 'spent') + sum(home, 'par') + sum(home, 'abb')) / moH : 0;
+  const head = `${est ? `<div class="alert acc">🚢 <div>Contracts are worked out from your salary dates. For exact sign-on / sign-off, paste your ships from <b>Sea Days Ledger</b>.</div><span class="sp"></span><button class="btn sm pri" data-act="shipPaste">⬇ Paste ships</button></div>` : ''}
+  <div class="grid g4">${kpi('🚢 Contracts', sea.length, Math.round(sum(sea, 'days')) + ' days at sea · ' + Math.round(sum(home, 'days')) + ' at home', 'acc')}${kpi('💰 Salary earned', rs(totE), sea.length ? rs(totE / Math.max(moS, 1)) + ' per month at sea' : '', 'grn')}${kpi('🏦 Kept overall', rs(totK), totE ? Math.round(totK / totE * 100) + '% of salary, after spending & ' + esc(wifeName()) : '', totK >= 0 ? 'gold' : 'red')}${kpi('🏖️ Outgo a month at home', rsShort(homePm), 'At sea: ' + rsShort(seaPm) + ' a month · incl. ' + esc(wifeName()) + ' & parents', 'vio')}</div>`;
+  const chartRows = rows.filter(r => r.kind === 'sea').slice(-(innerWidth < 700 ? 5 : 10));
+  const chart = chartRows.length ? `<div class="card mt"><h3>📊 Contract by contract <small>salary vs where it went · line = kept (incl. the leave after it)</small></h3>${barChart(chartRows.map(r => r.label), [{ name: 'Salary', color: '#10b981', values: chartRows.map(r => r.m.earned) }, { name: 'Spent', color: '#ef4444', values: chartRows.map(r => r.m.spent + r.m.par) }, { name: 'To ' + wifeName(), color: '#8b5cf6', values: chartRows.map(r => r.m.abb) }, { name: 'Invested', color: '#6ea8ff', values: chartRows.map(r => r.m.inv) }], { h: 230, line: { name: 'Kept', color: '#fbbf24', values: chartRows.map(r => { const i = rows.indexOf(r), nx = rows[i + 1]; return r.m.kept + (nx && nx.kind === 'home' ? nx.m.kept : 0); }) } })}</div>` : '';
+  const split = m => { const parts = [[m.spent, '#ef4444', 'Spent'], [m.par, '#ec4899', 'Parents'], [m.abb, '#8b5cf6', 'To ' + wifeName()], [m.inv, '#6ea8ff', 'Invested'], [Math.max(0, m.left), '#fbbf24', 'Left in bank']], tot = Math.max(m.earned, parts.slice(0, 4).reduce((s, p) => s + p[0], 0), 1);
+    return `<div class="sbar" style="margin:10px 0 6px">${parts.filter(p => p[0] > 0).map(p => `<i style="width:${(p[0] / tot * 100).toFixed(1)}%;background:${p[1]}" title="${esc(p[2])} ${rs(p[0])}"></i>`).join('')}</div>
+    <div class="cstat">${parts.map(p => `<span><i style="background:${p[1]}"></i>${esc(p[2])} <b class="num">${rsShort(p[0])}</b></span>`).join('')}</div>`; };
+  const cards = rows.slice().reverse().map(r => {
+    const m = r.m, pct = m.rate != null ? Math.round(m.rate * 100) : null;
+    if (r.kind === 'home') return `<div class="ctr home" data-act="shipTx" data-f="${r.f}" data-t="${r.t}"><span class="itile" style="--ic:#f59e0b">🏖️</span><div class="mid"><div class="t1">${esc(r.label)} · ${esc(r.name)}</div><div class="t2">${fmtDate(r.f)} → ${r.now ? 'today' : fmtDate(r.t)} · ${m.days} days</div></div>
+      <div class="r"><div class="num b dr">${rs(m.spent + m.par + m.abb)}</div><div class="t2">${rsShort(m.perMo)}/month${m.earned ? ' · salary in ' + rsShort(m.earned) : ''}</div></div></div>`;
+    return `<div class="card ctr sea"><div class="flex" style="gap:10px;flex-wrap:nowrap"><span class="itile" style="--ic:#06b6d4">🚢</span><div class="mid" style="min-width:0;flex:1"><div class="t1"><b>${esc(r.label)}</b> · ${esc(r.name)}${r.now ? ' <span class="pill acc">on board</span>' : ''}</div><div class="t2">${esc(r.sub || '')}${r.sub ? ' · ' : ''}${fmtDate(r.f)} → ${r.now ? 'today' : fmtDate(r.t)} · ${m.days} days</div></div>
+      <div class="r"><div class="num b cr">${rs(m.earned)}</div><div class="t2">${r.credits} credit${r.credits === 1 ? '' : 's'} · ${rsShort(m.earned / Math.max(m.mo, 1))}/month</div></div></div>
+      ${split(m)}
+      <div class="flex small" style="gap:8px;flex-wrap:wrap;margin-top:6px">${pct != null ? `<span class="chg ${pct >= 50 ? 'good' : pct >= 0 ? 'flat' : 'bad'}">Kept ${pct}%</span>` : ''}<span class="muted">Outgo while on board ${rsShort(m.perMo)}/month</span><span class="sp"></span><button class="btn sm ghost" data-act="shipTx" data-f="${r.f}" data-t="${r.t}">See entries →</button></div></div>`;
+  }).join('');
+  return head + chart + `<div class="sec">Newest first</div><div class="ctrl">${cards}</div>`;
+}
+{ const old = VIEWS.me;
+  VIEWS.me = () => { if (VIEW.sub.meSec !== 'ctr') return old(); const h = old(); return h.slice(0, h.indexOf('</div>') + 6) + contractsTab(); };
 }
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
