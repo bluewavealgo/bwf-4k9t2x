@@ -934,7 +934,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.3';
+const APP_VER = '4.4';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -992,7 +992,7 @@ const CATS = [
   // 🎬 Subscriptions & Fun
   ['subs', 'OTT & subscriptions', '🔁', 'exp', 'fun'], ['tools', 'Apps & trading tools', '🛠️', 'exp', 'fun'], ['entertainment', 'Movies & outings', '🎬', 'exp', 'fun'],
   // 👪 Family
-  ['wife', 'ABB', '👩', 'exp', 'family'], ['parents', 'Mom & Dad', '👪', 'exp', 'family'], ['brother', 'Brother (Nitesh)', '🧑', 'exp', 'family'], ['todad', 'Sent to Dad (via someone)', '👴', 'exp', 'family'], ['gifts', 'Gifts', '🎁', 'exp', 'family'], ['donation', 'Donation / Devotion', '🙏', 'exp', 'family'],
+  ['wife', 'ABB', '👩', 'exp', 'family'], ['parents', 'Mom & Dad', '👪', 'exp', 'family'], ['brother', 'Brother (Nitesh)', '🧑', 'exp', 'family'], ['todad', 'Sent to Dad', '👴', 'exp', 'family'], ['gifts', 'Gifts', '🎁', 'exp', 'family'], ['donation', 'Donation / Devotion', '🙏', 'exp', 'family'],
   // 💳 Loans & Cards
   ['ccbill', 'Credit card bill', '💳', 'exp', 'loans'], ['emi', 'Loan EMI', '🏦', 'exp', 'loans'], ['carloan', 'Car loan', '🚘', 'exp', 'loans'],
   // 🛡️ Insurance
@@ -1008,7 +1008,7 @@ const CATS = [
   ['tradingpay', 'Trading payout', '💹', 'inc', 'income'], ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc', 'income'], ['family', 'Received from family', '👪', 'inc', 'income'], ['otherinc', 'Other income', '➕', 'inc', 'income'],
   // 🔄 Transfers (excluded from spend/income)
   ['self', 'Self-transfer', '🔄', 'xfer', 'xfer'], ['friend', 'Friends (lend/borrow)', '🤝', 'xfer', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer', 'xfer'],
-  ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Son → Dad (repaid / given)', '👨', 'xfer', 'xfer'], ['toson', 'Dad → son (taken)', '👦', 'xfer', 'xfer'], ['cardpay', 'Card bill (card spends counted)', '💳', 'xfer', 'xfer'],
+  ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Son → Dad (repaid / given)', '👨', 'xfer', 'xfer'], ['toson', 'Dad → son (taken)', '👦', 'xfer', 'xfer'], ['cardpay', 'Card bill (card spends counted)', '💳', 'xfer', 'xfer'], ['fromdad', 'Received from Dad (owed)', '👨', 'xfer', 'xfer'],
 ];
 CATS.push(['gold', 'Gold', '🪙', 'inv', 'invest'], ['crypto', 'Crypto F&O (Delta)', '🪙', 'inv', 'invest']);
 CATS.forEach(c => { c[4] = GROUP_REMAP[c[4]] || c[4];
@@ -1152,7 +1152,7 @@ function remarkOf(d) {
 const payeeKey = p => compact(p).replace(/[^A-Z]/g, '').slice(0, 24);
 
 /* ---------- state ---------- */
-const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payslips: [], invvals: [], payeeApp: {}, dismissed: [] });
+const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payslips: [], invvals: [], docs: [], payeeApp: {}, dismissed: [] });
 function seedState() {
   const t = nowIso();
   // fixed ids + an old timestamp, so every device creates the SAME built-in records and sync never doubles them
@@ -1162,7 +1162,7 @@ function seedState() {
   const s = {
     v: 1,
     settings: {
-      meName: 'Ritesh', wifeName: 'ABB', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '', sonsMatch: { ritesh: 'RITESH BAGHEL, RITESH B, RITESH', nitesh: 'NITESH BAGHEL, NITESH K, NITESH' }, sonNames: { ritesh: 'Ritesh', nitesh: 'Nitesh (brother)' }, dadVia: 'KHEM CHAND',
+      meName: 'Ritesh', wifeName: 'ABB', ownerMatch: 'RITESH BAGHEL', wifeMatch: 'ANKITA BIS, ANKITA', husbandMatch: 'RITESH', parentsName: 'Parents', parentsMatch: '', sonsMatch: { ritesh: 'RITESH BAGHEL, RITESH B, RITESH', nitesh: 'NITESH BAGHEL, NITESH K, NITESH' }, sonNames: { ritesh: 'Ritesh', nitesh: 'Nitesh (brother)' }, dadVia: 'KHEM CHAND', dadMatch: 'THAKUR LAL',
       upiIds: { PhonePe: '', GPay: '', Paytm: '', 'Amazon Pay': '' }, lockMins: 5, theme: 'dark',
       sync: { url: '', key: '', lastAt: null }, remind: [3, 1],
     },
@@ -1270,6 +1270,25 @@ function migrate() { const d = seedState(); S.settings = Object.assign(d.setting
         else if (r.cat === 'tradingpay' && ['otherinc', 'refund'].includes(t.cat) && !t.reviewed) { t.cat = r.cat; touch(t); } });
     });
   }
+  if (S.settings.dadMatch == null) S.settings.dadMatch = 'THAKUR LAL';
+  if (!S.settings.famV1) { S.settings.famV1 = 1;
+    const me = S.profiles.me; me.friends = me.friends || [];
+    // Nitesh as a lend / borrow person
+    let nf = live(me.friends).find(f => /nitesh/i.test(f.name));
+    if (!nf) { nf = touch({ id: 'seed_me_nitesh', name: 'Nitesh (brother)', rel: 'family', aliases: ['NITESH BAGHEL', 'NITESH K'], entries: [] }); me.friends.push(nf); } else { nf.rel = 'family'; touch(nf); }
+    S.settings.niteshFid = nf.id;
+    const fe = (f, t) => { f.entries = f.entries || []; if (f.entries.some(e => e.txnId === t.id && !e.deleted)) return; f.entries.push({ id: uid(), type: t.dir === 'dr' ? 'lent' : 'borrowed', amount: t.amount, date: t.date, txnId: t.id, note: '', updatedAt: nowIso() }); touch(f); };
+    live(me.txns || []).forEach(t => {
+      if (t.userSet) return; const r = classify(t, 'me');
+      if (r.person === 'nitesh' && r.cat === 'friend' && t.cat !== 'friend') { t.cat = 'friend'; t.friendId = nf.id; t.person = 'nitesh'; t.reviewed = true; touch(t); fe(nf, t); }
+      else if (['todad', 'fromdad'].includes(r.cat) && (t.cat !== r.cat || t.friendId)) {
+        if (t.friendId) { const f = me.friends.find(x => x.id === t.friendId); if (f) { (f.entries || []).forEach(e => { if (e.txnId === t.id) { e.deleted = true; e.updatedAt = nowIso(); } }); touch(f); } }
+        t.cat = r.cat; t.person = 'ritesh'; t.friendId = null; t.conf = 'h'; touch(t);
+      }
+    });
+    // a "friend" that only held Dad's transfers is Dad → remove it
+    live(me.friends).filter(f => /thakur/i.test(f.name) && !live(f.entries || []).length).forEach(f => { f.deleted = true; touch(f); });
+  }
   if (!S.settings.abbV) { S.settings.abbV = 1;
     if (!S.settings.wifeName || /^ankita/i.test(S.settings.wifeName)) S.settings.wifeName = 'ABB';
     const w = S.profiles.wife; if (/^ankita/i.test(w.name || '')) w.name = 'ABB';
@@ -1331,6 +1350,7 @@ function classify(t, profKey) {
   const selfUpi = profKey === 'me' && t.mode === 'UPI' && first && [first, own].includes(compact(t.payee));
   if (ur) { out.cat = ur.cat; out.conf = 'h'; if (ur.for) out.for = ur.for; }
   else if ((isSelf || selfUpi) && profKey === 'me') { out.cat = 'self'; out.conf = 'h'; }
+  else if (profKey === 'me' && listOf(st.dadMatch || 'THAKUR LAL').some(w => w.length >= 4 && c.includes(w))) { out.cat = t.dir === 'dr' ? 'todad' : 'fromdad'; out.person = 'ritesh'; out.conf = 'h'; }
   else if (profKey === 'me' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
   else if (profKey === 'me' && t.dir === 'dr' && dadViaOf(c)) { out.cat = 'todad'; out.conf = 'h'; out.person = 'ritesh'; out.via = dadViaOf(c); out.for = 'parents'; }
   else if (profKey === 'me' && t.dir === 'dr' && ICICI_CARD_RE.test(c)) { out.cat = 'ccbill'; out.conf = 'h'; out.cardId = ICICI_CARD_ID; }
@@ -1341,7 +1361,7 @@ function classify(t, profKey) {
   else if (profKey === 'parents' && /RASECC/.test(c) && t.dir === 'dr') { out.cat = 'carloan'; out.conf = 'h'; }
   else if (profKey === 'parents' && t.dir === 'cr' && /CGDA|RBIS0CGDA/.test(c)) { out.cat = 'pension'; out.conf = 'h'; }
   else if (profKey === 'parents' && sonOf('parents', t, c)) { out.person = sonOf('parents', t, c); out.cat = t.dir === 'cr' ? 'fromson' : 'toson'; out.conf = 'h'; }
-  else if (profKey === 'me' && sonOf('me', t, c) === 'nitesh') { out.person = 'nitesh'; out.cat = t.dir === 'dr' ? 'brother' : 'family'; out.conf = 'h'; }
+  else if (profKey === 'me' && sonOf('me', t, c) === 'nitesh') { out.person = 'nitesh'; const nf = (prof.friends || []).find(f => f.id === (st.niteshFid || 'seed_me_nitesh') && !f.deleted); if (nf) { out.cat = 'friend'; out.friendId = nf.id; } else out.cat = t.dir === 'dr' ? 'brother' : 'family'; out.conf = 'h'; }
   else {
     const fr = matchFriend(prof, c);
     if (fr) { out.cat = 'friend'; out.conf = 'h'; out.friendId = fr.id; }
@@ -1481,7 +1501,7 @@ function accountBalance(profKey, accId) {
 }
 
 /* ---------- sync (manual, via the user's own Google Apps Script) ---------- */
-const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans', 'cats', 'payslips', 'invvals'];
+const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans', 'cats', 'payslips', 'invvals', 'docs'];
 const PROFS = ['me', 'wife', 'parents'];
 // money moving inside the household (not real spending when both profiles are combined)
 const hhSkip = t => catType(t.cat) === 'xfer' || t.cat === 'wife';
@@ -1575,7 +1595,7 @@ async function runSync(onStep) {
   S.settings.sync.lastAt = nowIso(); S.settings.sync.lastDev = deviceName(); await persist();
 }
 function deviceName() { const u = navigator.userAgent; return /iPad|Macintosh/.test(u) && 'ontouchend' in document ? 'iPad' : /iPhone/.test(u) ? 'iPhone' : /Android/.test(u) ? (/Mobile/.test(u) ? 'Android phone' : 'Android tablet') : 'Computer'; }
-const APPS_SCRIPT = `// BlueWave Finance — personal sync (paste into script.google.com)
+const APPS_SCRIPT = `// BlueWave Finance — personal sync v2 (paste into script.google.com)
 // 1) Change SECRET below to your own long password (same one you type in the app).
 // 2) Deploy > New deployment > Web app > Execute as: Me, Who has access: Anyone.
 // 3) Copy the Web app URL into the app's Settings > Sync.
@@ -1586,6 +1606,16 @@ function doPost(e) {
   try {
     const b = JSON.parse(e.postData.contents);
     if (b.key !== SECRET) return out({ ok: false, error: 'Wrong sync key' });
+    if (b.action === 'ping') return out({ ok: true, v: 2 });
+    // document files (already encrypted by the app before they are sent)
+    if (/^(putFile|getFile|delFile)$/.test(b.action)) {
+      if (!/^[A-Za-z0-9_-]{4,80}$/.test(b.name || '')) return out({ ok: false, error: 'Bad file name' });
+      const ff = getSub(getFolder(), 'files'), fit = ff.getFilesByName(b.name + '.bwf'), f = fit.hasNext() ? fit.next() : null;
+      if (b.action === 'getFile') return out({ ok: true, data: f ? f.getBlob().getDataAsString() : null });
+      if (b.action === 'delFile') { if (f) f.setTrashed(true); return out({ ok: true }); }
+      if (f) f.setContent(b.data); else ff.createFile(b.name + '.bwf', b.data, 'text/plain');
+      return out({ ok: true });
+    }
     if (!/^(me|wife|parents)$/.test(b.profile)) return out({ ok: false, error: 'Bad profile' });
     const folder = getFolder();
     const name = 'bwledger_' + b.profile + '.json';
@@ -1604,6 +1634,7 @@ function getFolder() {
   const it = DriveApp.getFoldersByName('BlueWave Finance');
   return it.hasNext() ? it.next() : DriveApp.createFolder('BlueWave Finance');
 }
+function getSub(p, n) { const it = p.getFoldersByName(n); return it.hasNext() ? it.next() : p.createFolder(n); }
 function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }`;
 
 /* ---------- ics calendar export ---------- */
@@ -3869,7 +3900,7 @@ function kpi3(icon, lab, val, cls, extra = '', sp = '', click = '') {
   return `<div class="card kpi k3 ${cls}" ${click}><div class="lab"><span class="chip">${icon}</span><span>${lab}</span></div><div class="val num">${val}</div><div class="foot">${extra}</div>${sp}</div>`;
 }
 const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
-const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const initials = n => String(n || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).filter(w => /^[A-Za-z0-9]/.test(w)).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 const AV_COL = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 const avatar = (n, sz = 42) => `<span class="avt" style="--av:${AV_COL[hashN(n) % AV_COL.length]};width:${sz}px;height:${sz}px">${esc(initials(n))}</span>`;
 function txTag(t) {
@@ -4611,8 +4642,13 @@ setTimeout(() => { if (navigator.onLine && /^http/.test(location.protocol)) chec
 const SONS = ['ritesh', 'nitesh'];
 const sonName = k => ((S.settings.sonNames || {})[k]) || (k === 'ritesh' ? 'Ritesh' : 'Nitesh (brother)');
 // money you paid to a middle person (Khem Chand…) who handed Dad the cash — lives in your own account, counts as given to Dad
-const viaTx = () => live(P('me').txns).filter(t => t.cat === 'todad' && t.dir === 'dr');
-function sonTx(k) { return live(P('parents').txns).filter(t => t.person === k && ['toson', 'fromson'].includes(t.cat)).concat(k === 'ritesh' ? viaTx().map(t => Object.assign(Object.create(t), { cat: 'fromson', _via: true })) : []).sort((a, b) => a.date.localeCompare(b.date) || (a.seq || 0) - (b.seq || 0)); }
+const viaTx = () => {   // your own statements: sent to Dad (direct or cash via someone) / received from Dad — skip ones already seen in Dad's PNB statement
+  const dad = live(P('parents').txns).filter(d => d.person === 'ritesh' && ['toson', 'fromson'].includes(d.cat)), used = new Set();
+  return live(P('me').txns).filter(t => (t.cat === 'todad' && t.dir === 'dr') || (t.cat === 'fromdad' && t.dir === 'cr')).filter(t => {
+    const d = dad.find(d => !used.has(d.id) && Math.abs(d.amount - t.amount) < 1 && Math.abs(daysBetween(d.date, t.date)) <= 3 && (t.dir === 'dr' ? d.cat === 'fromson' : d.cat === 'toson'));
+    if (d) { used.add(d.id); return false; } return true; });
+};
+function sonTx(k) { return live(P('parents').txns).filter(t => t.person === k && ['toson', 'fromson'].includes(t.cat)).concat(k === 'ritesh' ? viaTx().map(t => Object.assign(Object.create(t), { cat: t.dir === 'dr' ? 'fromson' : 'toson', _via: true })) : []).sort((a, b) => a.date.localeCompare(b.date) || (a.seq || 0) - (b.seq || 0)); }
 function sonSum(k) { const tx = sonTx(k), took = tx.filter(t => t.cat === 'toson').reduce((s, t) => s + t.amount, 0), gave = tx.filter(t => t.cat === 'fromson').reduce((s, t) => s + t.amount, 0); return { tx, took, gave, owes: took - gave }; }
 function sonsView() {
   const sel = VIEW.sub.sonSel || 'ritesh', sums = Object.fromEntries(SONS.map(k => [k, sonSum(k)]));
@@ -4630,7 +4666,7 @@ function sonsView() {
   ${untagged.length ? `<div class="card mt"><h3>❓ Transfers not yet linked to a son <small>${untagged.length}</small></h3>${untagged.slice(0, 20).map(t => `<div class="txc"><span class="itile" style="--ic:#f59e0b">${t.dir === 'dr' ? '↗️' : '↙️'}</span><div class="mid"><div class="t1">${esc(t.payee || t.desc)}</div><div class="t2">${fmtDate(t.date)} · ${t.dir === 'dr' ? 'Dad paid out' : 'Dad received'}</div></div><div class="r">${amtCell(t)}<div class="flex" style="gap:4px;margin-top:4px">${SONS.map(k => `<button class="btn sm" data-act="sonTag" data-id="${t.id}" data-k="${k}">${esc(sonName(k).split(' ')[0])}</button>`).join('')}</div></div></div>`).join('')}</div>` : ''}
   <div class="sec">${esc(sonName(sel))} — every transfer<span class="sp"></span><button class="btn sm pri" data-act="sonCash" data-k="${sel}" style="text-transform:none;letter-spacing:0">＋ Cash / other entry</button></div>
   ${Object.keys(fy).length ? `<div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Financial year</th><th class="ra">Took</th><th class="ra">Gave back</th><th class="ra">Net that year</th></tr></thead><tbody>${Object.entries(fy).sort((a, b) => b[0].localeCompare(a[0])).map(([y, v]) => `<tr><td>${esc(y)}</td><td class="ra num dr">${rs(v.took)}</td><td class="ra num cr">${rs(v.gave)}</td><td class="ra num b">${rs(v.took - v.gave)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
-  <div class="card mt" style="padding:4px 14px">${rows.length ? rows.map(({ t, run }) => `<div class="txc" data-act="editTxn" data-id="${t.id}" data-prof="${t._via ? 'me' : 'parents'}"><span class="itile" style="--ic:${t.cat === 'toson' ? '#ef4444' : '#10b981'}">${t.cat === 'toson' ? '↗️' : '↙️'}</span><div class="mid"><div class="t1">${t.cat === 'toson' ? 'Took from Dad' : 'Gave to Dad'}${t._via ? ' · cash via ' + esc(t.via || t.payee || 'someone') : t.source === 'manual' ? ' · ' + esc(t.mode || 'Cash') : ''}</div><div class="t2">${fmtDate(t.date)} · ${esc(t.note || t.desc)}</div></div><div class="r"><b class="num ${t.cat === 'toson' ? 'dr' : 'cr'}">${t.cat === 'toson' ? '+' : '−'}${rs(t.amount)}</b><div class="t2">${run >= 0 ? 'owes ' + rs(run) : 'Dad owes ' + rs(-run)}</div></div></div>`).join('') : emptyBox('👨‍👦', 'No transfers found yet', 'Import Dad’s PNB statement — transfers with ' + esc(sonName(sel).split(' ')[0]) + ' are picked up automatically.', '')}</div>
+  <div class="card mt" style="padding:4px 14px">${rows.length ? rows.map(({ t, run }) => `<div class="txc" data-act="editTxn" data-id="${t.id}" data-prof="${t._via ? 'me' : 'parents'}"><span class="itile" style="--ic:${t.cat === 'toson' ? '#ef4444' : '#10b981'}">${t.cat === 'toson' ? '↗️' : '↙️'}</span><div class="mid"><div class="t1">${t.cat === 'toson' ? 'Took from Dad' : 'Gave to Dad'}${t._via ? (t.via ? ' · cash via ' + esc(t.via) : ' · from your bank') : t.source === 'manual' ? ' · ' + esc(t.mode || 'Cash') : ''}</div><div class="t2">${fmtDate(t.date)} · ${esc(t.note || t.desc)}</div></div><div class="r"><b class="num ${t.cat === 'toson' ? 'dr' : 'cr'}">${t.cat === 'toson' ? '+' : '−'}${rs(t.amount)}</b><div class="t2">${run >= 0 ? 'owes ' + rs(run) : 'Dad owes ' + rs(-run)}</div></div></div>`).join('') : emptyBox('👨‍👦', 'No transfers found yet', 'Import Dad’s PNB statement — transfers with ' + esc(sonName(sel).split(' ')[0]) + ' are picked up automatically.', '')}</div>
   <div class="small muted mt">Names recognised in Dad’s statement: ${SONS.map(k => `<b>${esc(sonName(k))}</b>: ${esc((S.settings.sonsMatch || {})[k] || '')}`).join(' · ')} (plus your own account numbers). Paid to Dad through: <b>${esc(S.settings.dadVia || '—')}</b> (from your own accounts). <a href="#" data-act="sonNames">Edit</a></div>`;
 }
 function sonCashModal(k) {
@@ -5595,6 +5631,326 @@ document.addEventListener('change', e => {
   else if (el.dataset && el.dataset.fs === 'type' && el.dataset.id) RD['ty_' + el.dataset.id] = el.value;
 });
 document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.act === 'fsQ') { clearTimeout(RD.fq); RD.fq = setTimeout(() => { VIEW.sub.fsQ = el.value; VIEW.keepScroll = true; rerender(); const i = $('[data-act=fsQ]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 300); } });
+
+/* ============ v4.4 — Lend & Borrow (people), Dad / Nitesh, editable entries, payment methods ============ */
+const REL = [['friend', 'Friends'], ['family', 'Family'], ['other', 'Other']];
+const relOf = f => f.rel || (/nitesh/i.test(f.name) ? 'family' : 'friend');
+
+/* ---- Lend & Borrow page ---- */
+const _friendsV2 = VIEWS.friends;
+VIEWS.friends = () => {
+  const me = P('me'), keep = me.friends, rel = VIEW.sub.frRel || '';
+  if (rel) me.friends = keep.filter(f => f.deleted || relOf(f) === rel);
+  let h; try { h = _friendsV2(); } finally { me.friends = keep; }
+  h = h.replace(/Possible friend transfers/g, 'Possible lend / borrow transfers').replace(/＋ Add friend/g, '＋ Add person').replace('No friends added yet', 'No one added yet').replace('Add a friend, then link', 'Add a person, then link');
+  const cnt = k => live(keep).filter(f => !k || relOf(f) === k).length;
+  const chips = `<div class="chips">${[['', 'Everyone']].concat(REL).map(([k, l]) => `<button class="fchip ${rel === k ? 'on' : ''}" data-act="frRel" data-v="${k}">${l} <i>${cnt(k)}</i></button>`).join('')}</div>`;
+  // Dad card (from the Sons' ledger)
+  let dad = '';
+  try { const s = sonSum('ritesh'); if (s.tx.length) dad = `<div class="frow2" data-act="go" data-tab="parents" data-dadl="1" style="cursor:pointer">${avatar('Thakur Lal', 42)}<div class="mid"><div class="t1">Dad (Thakur Lal) <span class="pill vio">Family</span></div><div class="t2">took ${rs(s.took)} · gave ${rs(s.gave)} · from Dad’s PNB + your statements</div></div><div class="r"><div class="num b" style="color:${s.owes > 0 ? 'var(--red)' : 'var(--grn)'}">${rs(Math.abs(s.owes))}</div><div class="t2">${s.owes > 0 ? 'you owe Dad' : s.owes < 0 ? 'Dad owes you' : 'settled'}</div></div><span class="chev">›</span></div>`; } catch (e) { }
+  const at = h.indexOf('<input class="inp srch" placeholder="🔎  Search by name or phone"');
+  if (at > 0) { const end = h.indexOf('</div>', h.indexOf('<div class="chips">', at)) + 6; h = h.slice(0, end) + chips + h.slice(end); }
+  if (dad && (!rel || rel === 'family')) { const c = h.indexOf('<div class="card" style="padding:4px 12px">'); if (c > 0) h = h.slice(0, c) + `<div class="card" style="padding:4px 12px;margin-bottom:10px">${dad}</div>` + h.slice(c); }
+  return h;
+};
+TITLES.friends = 'Lend & Borrow';
+[NAV, MORE_TILES].forEach(L => L.forEach(n => { if (n[0] === 'friends') { if (L === NAV) n[1] = 'Lend & Borrow'; else n[2] = 'Lend & Borrow'; } }));
+Object.assign(ACT, {
+  frRel: el => { VIEW.sub.frRel = el.dataset.v; VIEW.keepScroll = true; rerender(); },
+});
+// Dad card → open the Sons' ledger tab
+document.addEventListener('click', e => { const el = e.target.closest('[data-dadl]'); if (el) { VIEW.sub.parents = 'sons'; VIEW.sub.sonSel = 'ritesh'; } }, true);
+
+/* ---- person window: relation + tap an entry to edit it ---- */
+const _friendModal = friendModal;
+friendModal = function (fid) {
+  _friendModal(fid);
+  const f = P('me').friends.find(x => x.id === fid); if (!f) return;
+  const m = $('#mask .modal'); if (!m) return;
+  const h2 = $('.mh h2', m); if (h2) h2.textContent = (relOf(f) === 'family' ? '👪 ' : '🤝 ') + f.name;
+  const del = $('#fr_del', m); if (del) del.textContent = 'Delete person';
+  const body = $('.mb', m) || m;
+  body.insertAdjacentHTML('afterbegin', `<div class="flex small" style="gap:6px;margin-bottom:10px;flex-wrap:wrap"><span class="muted">Group:</span>${REL.map(([k, l]) => `<button class="fchip ${relOf(f) === k ? 'on' : ''}" data-frrel="${k}">${l.replace(/s$/, '')}</button>`).join('')}</div>`);
+  $$('[data-frrel]', m).forEach(b => b.onclick = () => { f.rel = b.dataset.frrel; touch(f); save(); friendModal(fid); rerender(); });
+  const entries = live(f.entries || []).sort((x, y) => y.date.localeCompare(x.date));
+  $$('[data-act=delFriendEntry]', m).forEach(btn => { const row = btn.closest('.row'); if (!row) return; row.style.cursor = 'pointer'; row.title = 'Tap to edit';
+    row.addEventListener('click', ev => { if (ev.target.closest('[data-act]')) return; entryModal(fid, btn.dataset.id); }); });
+  void entries;
+};
+function entryModal(fid, eid) {
+  const f = P('me').friends.find(x => x.id === fid), e = f && (f.entries || []).find(x => x.id === eid); if (!e) return;
+  const t = e.txnId ? P('me').txns.find(x => x.id === e.txnId) : null;
+  const okTypes = Object.entries(FTYPES).filter(([k, v]) => !t || (t.dir === 'dr' ? ['lent', 'returned'].includes(k) : ['recvback', 'borrowed'].includes(k)));
+  modal('Edit entry · ' + esc(f.name), `${t ? `<div class="alert acc">🏦 <div>From your bank statement: <b>${fmtDate(t.date)}</b> · ${esc(accName('me', t.account))} · ${amtCell(t)}<div class="small muted">${esc(maskWife(t.desc))}</div></div></div>` : ''}
+    <div class="frow mt"><div class="fld"><label>Type</label><select class="inp" id="ee_t">${okTypes.map(([k, v]) => `<option value="${k}" ${e.type === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></div>
+    <div class="fld"><label>Amount (₹)</label><input class="inp" id="ee_a" type="number" value="${e.amount}" ${t ? 'disabled title="Comes from the bank statement"' : ''}></div>
+    <div class="fld"><label>Date</label><input class="inp" id="ee_d" type="date" value="${e.date}"></div></div>
+    <div class="frow mt"><div class="fld"><label>Return by (optional)</label><input class="inp" id="ee_due" type="date" value="${e.dueBy || ''}"></div><div class="fld"><label>Note</label><input class="inp" id="ee_n" value="${esc(e.note || '')}"></div></div>`,
+    `${t ? '<button class="btn" id="ee_unl">Unlink from ' + esc(f.name.split(' ')[0]) + '</button>' : ''}<button class="btn dan" id="ee_del">Delete</button><span style="flex:1"></span><button class="btn" id="ee_back">Back</button><button class="btn pri" id="ee_s">Save</button>`, { onMount: m => {
+      $('#ee_back', m).onclick = () => friendModal(fid);
+      $('#ee_s', m).onclick = () => { e.type = $('#ee_t', m).value; if (!t) e.amount = +$('#ee_a', m).value || e.amount; e.date = $('#ee_d', m).value || e.date; e.dueBy = $('#ee_due', m).value; e.note = $('#ee_n', m).value; e.updatedAt = nowIso(); touch(f); save(); friendModal(fid); rerender(); toast('Saved'); };
+      const unlink = () => { e.deleted = true; e.updatedAt = nowIso(); if (t) { t.cat = t.dir === 'dr' ? 'other' : 'otherinc'; t.friendId = null; t.notFriend = false; t.reviewed = false; t.userSet = false; touch(t); } touch(f); save(); friendModal(fid); rerender(); };
+      if ($('#ee_unl', m)) $('#ee_unl', m).onclick = () => { unlink(); toast('Unlinked — it’s back in “Possible lend / borrow transfers”'); };
+      $('#ee_del', m).onclick = () => confirmBox('Delete this entry?', t ? 'The bank entry goes back to the possible transfers list.' : 'This cannot be undone.', 'Delete', () => { unlink(); }, true);
+    } });
+}
+
+/* ---- 💳 payment method of every entry ---- */
+const PM = [['net', '🌐', 'Net banking'], ['atm', '🏧', 'ATM / cash'], ['upi', '📱', 'UPI'], ['card', '💳', 'Card'], ['auto', '🔁', 'Auto-debit'], ['chq', '🧾', 'Cheque'], ['bank', '🏦', 'Bank (interest / charges)'], ['other', '❔', 'Other']];
+const PM_COL = { net: '#3b82f6', atm: '#f59e0b', upi: '#8b5cf6', card: '#ec4899', auto: '#14b8a6', chq: '#64748b', bank: '#22c55e', other: '#94a3b8' };
+function payMethod(t) {
+  const c = compact(t.desc || ''), m = t.mode || '';
+  if (t.source === 'upi' || m === 'UPI' || /^UPI|UPI\//.test(c)) return 'upi';
+  if (/^AT[LW]\/|ATMWDL|ATM-?WDL|^ATM|CASHWDL|CSHWDL|CASHDEP|BYCASH|CASHDEPOSIT|^CDM|CASHWITHDRAWAL|^CASH$/.test(c) || m === 'ATM') return 'atm';
+  if (/^PC[DI]\/|^POS|ECOMPUR|^ECOM|^VISA|RUPAY|BRN-PYMT-CARD|DEBITCARD|^VPS|^IPS\//.test(c) || m === 'Card') return 'card';
+  if (/^NACH|ACH[-\/]|^ACH|ECS|^SI\/|STANDINGINSTR|MANDATE|AUTOPAY/.test(c) || m === 'NACH') return 'auto';
+  if (/CHQ|CHEQUE|^CLG|BYCLG|TOCLG|INWARDCLG|OUTWARDCLG|^CTS/.test(c)) return 'chq';
+  if (['interest', 'charges', 'taxes'].includes(t.cat) || /INT\.?PD|^SBINT|INTEREST|^CHRG|CHARGES|^TDS|GST@|NON-MAINT|MINBAL|SMSCHG/.test(c) || ['Interest', 'Charges'].includes(m)) return 'bank';
+  if (/NEFT|IMPS|RTGS|^MB:|^IB:|^IB\/|FUNDTRANSFER|^TRF|TRANSFER|^INB|SENTIMPS|RECD:IMPS|^BIL\/|^BILLPAY/.test(c) || ['IMPS', 'NEFT', 'Mobile banking', 'Net banking'].includes(m)) return 'net';
+  return 'other';
+}
+const upiAppOf = t => t.app && !['Merchant / autopay', 'Not shown'].includes(t.app) ? t.app : t.app === 'Merchant / autopay' ? 'Merchant / autopay' : 'App not known';
+function payTab(k) {
+  const key = 'pay_' + k, { p, r, q } = fbState(key, 'fy0'), acc = VIEW.sub['pa_' + key] || '', sel = VIEW.sub['pg_' + key] || '';
+  const accs = P(k).accounts.filter(a => !a.deleted && !['UPI app', 'Cash'].includes(a.type));
+  const base = live(P(k).txns).filter(t => t.date >= r[0] && t.date <= r[1] && t.source !== 'manual' && (!acc || t.account === acc) && txMatch(t, q));
+  const g = {}; base.forEach(t => { const m = payMethod(t); (g[m] = g[m] || []).push(t); });
+  const outT = sumAmt(base.filter(t => t.dir === 'dr'));
+  const items = PM.filter(([id]) => g[id]).map(([id, ic, l]) => ({ label: ic + ' ' + l, value: sumAmt(g[id].filter(t => t.dir === 'dr')), color: PM_COL[id] })).filter(x => x.value > 0);
+  const rows = PM.filter(([id]) => g[id]).map(([id, ic, l]) => { const L = g[id], o = L.filter(t => t.dir === 'dr'), i = L.filter(t => t.dir === 'cr');
+    let sub = '';
+    if (id === 'upi' && sel === 'upi') { const ap = {}; L.forEach(t => { const a = upiAppOf(t); (ap[a] = ap[a] || []).push(t); }); sub = Object.entries(ap).sort((a, b) => sumAmt(b[1]) - sumAmt(a[1])).map(([a, l2]) => `<tr class="sub"><td style="padding-left:30px">${esc(a)}</td><td class="ra num dr">${rs(sumAmt(l2.filter(t => t.dir === 'dr')))}</td><td class="ra num cr">${rs(sumAmt(l2.filter(t => t.dir === 'cr')))}</td><td class="ra">${l2.length}</td></tr>`).join(''); }
+    return `<tr class="clk ${sel === id ? 'on' : ''}" data-act="pmSel" data-k="${key}" data-g="${id}"><td><b>${ic} ${l}</b></td><td class="ra num dr">${rs(sumAmt(o))}</td><td class="ra num cr">${rs(sumAmt(i))}</td><td class="ra">${L.length}</td></tr>${sub}`; }).join('');
+  const list = sel ? (g[sel] || []).sort(byDesc) : [];
+  return `${filterBar(key)}
+  ${accs.length > 1 ? `<div class="chips"><button class="fchip ${!acc ? 'on' : ''}" data-act="pmAcc" data-k="${key}" data-v="">🏦 All accounts</button>${accs.map(a => `<button class="fchip ${acc === a.id ? 'on' : ''}" data-act="pmAcc" data-k="${key}" data-v="${a.id}">${esc(a.name)}</button>`).join('')}</div>` : ''}
+  <div class="grid g21"><div class="card"><h3>How the money went out · ${perLabel(p)} <small>${rs(outT)}</small></h3>${items.length ? donutPct(items, outT, false) : '<div class="muted small">Nothing in this period.</div>'}</div>
+  <div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Method</th><th class="ra">Paid out</th><th class="ra">Received</th><th class="ra">Entries</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No bank entries in this period.</td></tr>'}</tbody></table></div><div class="small muted" style="padding:6px">Tap a method to list its entries${g.upi ? ' — UPI also splits by app' : ''}.</div></div></div>
+  ${sel ? `<div class="sec">${(PM.find(x => x[0] === sel) || [])[1]} ${(PM.find(x => x[0] === sel) || [])[2]} — ${list.length} entries<span class="sp"></span><button class="btn sm ghost" data-act="pmSel" data-k="${key}" data-g="">Close</button></div>${listCard(list, k, lim(key), key)}` : ''}`;
+}
+Object.assign(ACT, {
+  pmSel: el => { const k = 'pg_' + el.dataset.k; VIEW.sub[k] = VIEW.sub[k] === el.dataset.g ? '' : el.dataset.g; VIEW.keepScroll = true; rerender(); },
+  pmAcc: el => { VIEW.sub['pa_' + el.dataset.k] = el.dataset.v; VIEW.keepScroll = true; rerender(); },
+});
+// add the tab to Me and ABB
+ME_TABS.splice(ME_TABS.length - 1, 0, ['pay', '💳 How I pay']);
+const _meV = VIEWS.me;
+VIEWS.me = () => { if ((VIEW.sub.meSec || 'inc') !== 'pay') return _meV(); const h = _meV(); return h.slice(0, h.indexOf('</div>') + 6) + payTab('me'); };
+const _wifeV2 = VIEWS.wife;
+const W_TABS = [['from', '💞 From Ritesh'], ['inv', '📈 Investments'], ['exp', '🧾 Expenses'], ['pay', '💳 How she pays'], ['acc', '🏦 Accounts & entries']];
+VIEWS.wife = () => {
+  const s = VIEW.sub.wSec || 'from', tabs = `<div class="tabs">${W_TABS.map(([k, l]) => `<button class="tab ${s === k ? 'on' : ''}" data-act="rdSec" data-base="wSec" data-v="${k}">${l}</button>`).join('')}</div>`;
+  if (s === 'pay') return tabs + payTab('wife');
+  const h = _wifeV2(); return tabs + h.slice(h.indexOf('</div>') + 6);
+};
+// method filter + label in All transactions
+const _txPanel2 = txnsPanel;
+txnsPanel = function (profKey) {
+  const F = VIEW.sub['f_' + profKey] = VIEW.sub['f_' + profKey] || {}, prof = P(profKey), keep = prof.txns;
+  if (F.pm) prof.txns = keep.filter(t => t.deleted || payMethod(t) === F.pm);
+  let h; try { h = _txPanel2(profKey); } finally { prof.txns = keep; }
+  if ((S.settings.txView || 'cards') === 'table') return h;
+  const sel = `<select class="fchip sel" data-act="rdF" data-k="pm" data-prof="${profKey}"><option value="">Any method</option>${PM.map(([id, ic, l]) => `<option value="${id}" ${F.pm === id ? 'selected' : ''}>${ic} ${l}</option>`).join('')}</select>`;
+  return h.replace('<select class="fchip sel" data-act="rdF" data-k="st"', sel + '<select class="fchip sel" data-act="rdF" data-k="st"');
+};
+const _filteredList = filteredList;
+filteredList = k => { const F = VIEW.sub['f_' + k] || {}; return _filteredList(k).filter(t => !F.pm || payMethod(t) === F.pm); };
+
+/* ============ v4.4 — 📂 Documents: bank statements, insurance, mutual funds, broker reports, tax papers, payslips ============ */
+const DOC_KINDS = [['bank', '🏦', 'Bank statements'], ['ins', '🛡️', 'Insurance'], ['mf', '📈', 'Mutual funds'], ['broker', '💹', 'Broker reports'], ['tax', '🧾', 'Tax'], ['slip', '🚢', 'Payslips'], ['check', '✅', 'FY checklist']];
+const INS_TYPES = [['health', 'Health insurance', 'healthins'], ['term', 'Term insurance', 'term'], ['life', 'Life / LIC', 'insurance'], ['vehicle', 'Car / bike insurance', 'vehins'], ['other', 'Other', 'insurance']];
+const MF_SRC = ['CAS (CAMS / KFintech)', 'Zerodha Coin', 'NJ E-Wealth', 'Other'];
+const BROKERS_L = ['Zerodha', 'Zerodha Coin', 'Delta Exchange', 'Fyers', 'Flattrade', 'Shoonya', 'NJ E-Wealth', 'Other'];
+const BR_REPORTS = ['Tax P&L', 'Capital gains', 'Tradebook', 'Ledger', 'Holdings', 'Other'];
+const TAX_DOCS = ['AIS / 26AS', 'ITR-V / acknowledgement', 'Interest certificate', 'TDS certificate (Form 16A)', 'Computation from CA', 'Other'];
+const DOCF = { local: new Set(), loaded: false };
+const docs = k => live(P(k).docs || []);
+const fyL = y => 'FY ' + y + '-' + String(y + 1).slice(2);
+
+/* ---- file storage: on this device (encrypted), optionally in your Drive (encrypted with the sync password) ---- */
+async function fileKeyObj() {
+  if (!HAS_CRYPTO) return null;
+  if (!S.settings.fileKey) { S.settings.fileKey = b64.enc(crypto.getRandomValues(new Uint8Array(32))); save(); }
+  return crypto.subtle.importKey('raw', b64.dec(S.settings.fileKey), 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+async function fileSaveLocal(id, u8) {
+  const k = await fileKeyObj();
+  if (!k) await IDB.set('file_' + id, { plain: b64.enc(u8) });
+  else { const iv = crypto.getRandomValues(new Uint8Array(12)); const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, u8)); await IDB.set('file_' + id, { iv: b64.enc(iv), ct: b64.enc(ct) }); }
+  DOCF.local.add(id);
+}
+async function fileLoadLocal(id) {
+  const v = await IDB.get('file_' + id); if (!v) return null;
+  if (v.plain) return b64.dec(v.plain);
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.dec(v.iv) }, await fileKeyObj(), b64.dec(v.ct)));
+}
+async function refreshLocalFiles() {
+  const all = PROFS.flatMap(k => docs(k).filter(d => d.file));
+  for (const d of all) { if (!DOCF.local.has(d.id) && await IDB.get('file_' + d.id)) DOCF.local.add(d.id); }
+  DOCF.loaded = true;
+}
+async function driveKey(salt) { const pw = S.settings.sync.encPw; if (!pw) throw new Error('Set the encryption password in ⟳ Sync & Update first — files are only sent to Drive encrypted.'); return deriveKey(pw, salt); }
+async function filePutDrive(d) {
+  const u8 = await fileLoadLocal(d.id); if (!u8) throw new Error('File not on this device');
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await driveKey(salt), u8));
+  await callScript({ key: S.settings.sync.key, action: 'putFile', name: 'f_' + d.id, data: JSON.stringify({ salt: b64.enc(salt), iv: b64.enc(iv), ct: b64.enc(ct) }) });
+}
+async function fileGetDrive(d) {
+  const r = await callScript({ key: S.settings.sync.key, action: 'getFile', name: 'f_' + d.id }); if (!r.data) throw new Error('Not found in your Drive yet — sync from the device that has it.');
+  const o = JSON.parse(r.data);
+  try { return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.dec(o.iv) }, await driveKey(b64.dec(o.salt)), b64.dec(o.ct))); }
+  catch (e) { throw new Error('Wrong encryption password — it must be the same on all devices.'); }
+}
+const oldScript = e => /Unknown action|Bad profile/i.test(String(e && e.message || e));
+const SCRIPT_MSG = 'Your Apps Script is the old version. In ⟳ Sync & Update → How to set up, copy the new script, paste it in script.google.com, then Deploy → Manage deployments → ✏️ → New version.';
+async function uploadPendingFiles(onStep) {
+  const todo = PROFS.flatMap(k => docs(k).filter(d => d.file && !d.drive && DOCF.local.has(d.id)).map(d => ({ k, d })));
+  let n = 0;
+  for (const { d } of todo) { if (onStep) onStep('Uploading document ' + (++n) + ' of ' + todo.length + '…'); try { await filePutDrive(d); d.drive = true; touch(d); } catch (e) { if (oldScript(e)) throw new Error(SCRIPT_MSG); throw e; } }
+  if (n) save(); return n;
+}
+const _runSyncD = runSync;
+runSync = async function (onStep) {
+  if (S.settings.sync.files) { try { await refreshLocalFiles(); await uploadPendingFiles(onStep); } catch (e) { toast('Files not uploaded: ' + e.message, 7000); } }
+  return _runSyncD(onStep);
+};
+async function openDoc(k, id, dl) {
+  const d = docs(k).find(x => x.id === id); if (!d || !d.file) return;
+  try {
+    let u8 = await fileLoadLocal(id);
+    if (!u8) { if (!d.drive) { toast('This file is only on the device where it was uploaded.'); return; } toast('Downloading from your Drive…'); u8 = await fileGetDrive(d); await fileSaveLocal(id, u8); rerender(); }
+    const blob = new Blob([u8], { type: d.file.type || 'application/pdf' });
+    if (dl) { download(d.file.name || 'document.pdf', blob); return; }
+    const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+  } catch (e) { toast(oldScript(e) ? SCRIPT_MSG : e.message, 8000); }
+}
+
+/* ---- add / edit a document ---- */
+function docModal(k, kind, id, preset = {}) {
+  const L = P(k).docs = P(k).docs || []; const d = L.find(x => x.id === id) || Object.assign({ kind, fy: fyNum(today()) - (kind === 'ins' ? 0 : 1) }, preset);
+  kind = d.kind;
+  const ys = []; for (let y = fyNum(today()) + 1; y >= 2015; y--) ys.push(y);
+  const inp = (f, l, ty = 'text', ph = '') => `<div class="fld"><label>${l}</label><input class="inp" data-df="${f}" type="${ty}" value="${esc(d[f] ?? '')}" placeholder="${esc(ph)}"></div>`;
+  const sel = (f, l, opts) => `<div class="fld"><label>${l}</label><select class="inp" data-df="${f}">${opts.map(o => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(d[f] ?? '') === String(v) ? 'selected' : ''}>${esc(t)}</option>`; }).join('')}</select></div>`;
+  const kindF = kind === 'ins' ? `<div class="frow">${sel('insType', 'Type', INS_TYPES.map(x => [x[0], x[1]]))}${inp('insurer', 'Insurer', 'text', 'e.g. Star Health, HDFC Life')}</div><div class="frow mt">${inp('policyNo', 'Policy no.')}${inp('sumAssured', 'Sum insured / assured (₹)', 'number')}</div><div class="frow mt">${inp('premium', 'Yearly premium (₹)', 'number')}${inp('renewal', 'Next renewal date', 'date')}</div>
+      <label class="chk mt"><input type="checkbox" id="dm_rem" ${d.billId || !id ? 'checked' : ''}> Remind me before renewal (adds it to Fixed payments & Upcoming)</label>`
+    : kind === 'mf' ? `<div class="frow">${sel('provider', 'Statement from', MF_SRC)}${inp('value', 'Value on statement (₹, optional)', 'number')}</div>`
+    : kind === 'broker' ? `<div class="frow">${sel('broker', 'Broker', BROKERS_L)}${sel('report', 'Report', BR_REPORTS)}</div><div class="frow mt">${inp('pnl', 'Profit / loss shown (₹, optional, − for loss)', 'number')}</div>`
+    : kind === 'tax' ? `<div class="frow">${sel('docType', 'Document', TAX_DOCS)}</div>` : '';
+  const fileInfo = d.file ? `<div class="small muted mt">📎 ${esc(d.file.name)} · ${(d.file.size / 1048576).toFixed(1)} MB · ${DOCF.local.has(d.id) ? '📱 on this device' : ''}${d.drive ? ' ☁️ in Drive' : ''}</div>` : '';
+  modal((id ? 'Edit · ' : 'Add · ') + (DOC_KINDS.find(x => x[0] === kind) || [])[2], `<div class="frow">${sel('fy', 'Financial year', ys.map(y => [y, fyL(y)]))}${inp('title', 'Name', 'text', 'optional — filled in for you')}</div>
+    <div class="mt">${kindF}</div>
+    <div class="fld mt"><label>File (PDF or photo, optional)</label><input class="inp" id="dm_file" type="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.xlsx,.xls,.csv"></div>${fileInfo}
+    <div class="fld mt"><label>Note</label><input class="inp" data-df="note" value="${esc(d.note || '')}"></div>
+    <div class="small muted mt">🔒 Files are encrypted on this device. They go to your Google Drive (encrypted) only if “Also upload document files” is on in ⟳ Sync & Update.</div>`,
+    `${id ? '<button class="btn dan" id="dm_del">Delete</button><span style="flex:1"></span>' : ''}<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="dm_s">Save</button>`, { onMount: m => {
+      $('#dm_s', m).onclick = async () => {
+        const o = id ? d : Object.assign({ id: uid(), kind }, preset);
+        $$('[data-df]', m).forEach(i => o[i.dataset.df] = i.type === 'number' ? (i.value === '' ? '' : +i.value) : i.dataset.df === 'fy' ? +i.value : i.value.trim());
+        const f = $('#dm_file', m).files[0];
+        if (f) { if (f.size > 25 * 1048576) { toast('File is larger than 25 MB'); return; } $('#dm_s', m).disabled = true; $('#dm_s', m).textContent = 'Saving…';
+          await fileSaveLocal(o.id, new Uint8Array(await f.arrayBuffer())); o.file = { name: f.name, size: f.size, type: f.type || 'application/pdf' }; o.drive = false; }
+        if (!o.title) o.title = docTitle(o);
+        if (kind === 'ins') insReminder(k, o, $('#dm_rem', m).checked);
+        touch(o); if (!id) L.push(o); save(); closeModal(); rerender(); toast('Saved');
+      };
+      if (id) $('#dm_del', m).onclick = () => confirmBox('Delete this document?', 'The file is removed from this device' + (d.drive ? ' and from your Drive' : '') + '.', 'Delete', async () => {
+        await IDB.del('file_' + d.id); DOCF.local.delete(d.id);
+        if (d.drive) { try { await callScript({ key: S.settings.sync.key, action: 'delFile', name: 'f_' + d.id }); } catch (e) { } }
+        removeRec(L, d.id); save(); rerender(); }, true);
+    } });
+}
+function docTitle(o) {
+  if (o.kind === 'ins') return (INS_TYPES.find(x => x[0] === o.insType) || INS_TYPES[0])[1] + (o.insurer ? ' · ' + o.insurer : '');
+  if (o.kind === 'mf') return 'Mutual fund statement · ' + (o.provider || '');
+  if (o.kind === 'broker') return (o.broker || 'Broker') + ' · ' + (o.report || 'report');
+  if (o.kind === 'tax') return o.docType || 'Tax document';
+  return 'Document';
+}
+function insReminder(k, o, on) {
+  const bills = P(k).bills; let b = o.billId && bills.find(x => x.id === o.billId && !x.deleted);
+  if (!on) { if (b) { b.status = 'paused'; touch(b); } return; }
+  if (!o.renewal || !o.premium) return;
+  const t = INS_TYPES.find(x => x[0] === o.insType) || INS_TYPES[0];
+  const v = { kind: 'fixed', ftype: ['health', 'term', 'life', 'vehicle'].includes(o.insType) ? o.insType : 'other', name: t[1] + (o.insurer ? ' · ' + o.insurer : ''), cat: t[2], amount: +o.premium, cycle: 'yearly', nextDue: o.renewal, status: 'active', method: '', match: o.insurer || '', notes: o.policyNo ? 'Policy ' + o.policyNo : '' };
+  if (b) { Object.assign(b, v); touch(b); } else { b = touch(Object.assign({ id: uid(), payments: [], priceLog: [] }, v)); bills.push(b); o.billId = b.id; }
+}
+
+/* ---- the page ---- */
+function docCard(k, d) {
+  const loc = DOCF.local.has(d.id), sub = d.kind === 'ins' ? [d.policyNo && 'Policy ' + d.policyNo, d.sumAssured && 'Cover ' + rs(d.sumAssured), d.premium && 'Premium ' + rs(d.premium), d.renewal && 'Renews ' + fmtDate(d.renewal)].filter(Boolean).join(' · ')
+    : d.kind === 'broker' ? [d.report, d.pnl !== '' && d.pnl != null ? 'P/L ' + (d.pnl < 0 ? '−' : '+') + rs(Math.abs(d.pnl)) : ''].filter(Boolean).join(' · ') : d.kind === 'mf' ? [d.provider, d.value ? 'Value ' + rs(d.value) : ''].filter(Boolean).join(' · ') : (d.docType || '');
+  const due = d.kind === 'ins' && d.renewal ? daysBetween(today(), d.renewal) : null;
+  return `<div class="txc"><span class="itile" style="--ic:#0ea5e9">${(DOC_KINDS.find(x => x[0] === d.kind) || [, '📄'])[1]}</span><div class="mid" data-act="docEdit" data-prof="${k}" data-id="${d.id}" style="cursor:pointer"><div class="t1">${esc(d.title || docTitle(d))}</div><div class="t2">${fyL(d.fy)}${sub ? ' · ' + esc(sub) : ''}${d.note ? ' · ' + esc(d.note) : ''}</div>
+    <div class="t2">${d.file ? `📎 ${esc(d.file.name)} · ${loc ? '📱 this device' : ''}${loc && d.drive ? ' + ' : ''}${d.drive ? '☁️ Drive' : ''}${!loc && !d.drive ? '⚠️ on another device' : ''}` : '<span class="muted">no file attached</span>'}${due != null && due >= 0 && due <= 45 ? ` · <b class="dr">renewal in ${due} days</b>` : ''}</div></div>
+    <div class="r" style="white-space:nowrap">${d.file && (loc || d.drive) ? `<button class="btn sm pri" data-act="docOpen" data-prof="${k}" data-id="${d.id}">${loc ? 'Open' : '☁️ Get'}</button> <button class="btn sm ghost" data-act="docDl" data-prof="${k}" data-id="${d.id}">⬇</button>` : ''}</div></div>`;
+}
+function docList(k, kind) {
+  const q = (VIEW.sub.dq || '').toLowerCase().trim(), fy = VIEW.sub.dfy || '';
+  const all = docs(k).filter(d => d.kind === kind), yrs = [...new Set(all.map(d => d.fy))].sort((a, b) => b - a);
+  const L = all.filter(d => (!fy || d.fy === +fy) && (!q || JSON.stringify([d.title, d.insurer, d.policyNo, d.broker, d.provider, d.docType, d.note, d.file && d.file.name]).toLowerCase().includes(q))).sort((a, b) => b.fy - a.fy || String(a.title).localeCompare(String(b.title)));
+  const hint = { ins: 'Health, term, life and car/bike policies — with renewal reminders.', mf: 'CAS statement from CAMS / KFintech, Zerodha Coin, NJ E-Wealth.', broker: 'Zerodha tax P&L / tradebook, Delta Exchange tax report, Fyers, Flattrade…', tax: 'AIS / 26AS, ITR-V, interest and TDS certificates.' }[kind];
+  return `<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><input class="inp" style="flex:1;min-width:180px" placeholder="🔎 Search name, insurer, policy no., broker…" value="${esc(VIEW.sub.dq || '')}" data-act="docQ"><button class="btn pri" data-act="docAdd" data-prof="${k}" data-kind="${kind}">＋ Add</button></div>
+  ${yrs.length > 1 ? `<div class="chips"><button class="fchip ${!fy ? 'on' : ''}" data-act="docFy" data-v="">All years</button>${yrs.map(y => `<button class="fchip ${+fy === y ? 'on' : ''}" data-act="docFy" data-v="${y}">${fyL(y)}</button>`).join('')}</div>` : ''}
+  <div class="card" style="padding:4px 14px">${L.length ? L.map(d => docCard(k, d)).join('') : emptyBox((DOC_KINDS.find(x => x[0] === kind) || [])[1], 'Nothing here yet', hint, `<button class="btn pri sm" data-act="docAdd" data-prof="${k}" data-kind="${kind}">＋ Add</button>`)}</div>`;
+}
+function checklist(k) {
+  const y = VIEW.sub.chkFy ?? fyNum(today()) - 1, [f, t] = fyRange(y), D = docs(k).filter(d => d.fy === y), ys = []; for (let v = fyNum(today()); v >= 2018; v--) ys.push(v);
+  const rows = [];
+  // bank statements
+  stAccounts(k).filter(a => !isOptAcc(a)).forEach(a => { const r = fyStatus(k, a, y, coverage(k, a)); if (r.st === 'na') return; rows.push(['🏦', a.name + ' statement', r.st === 'ok' || r.st === 'cur' ? 'ok' : r.st === 'part' ? 'part' : 'miss', r.st === 'part' ? gapText(r.gaps) + ' missing' : '', `data-act="stCell" data-acc="${a.id}" data-y="${y}" data-prof="${k}"`]); });
+  if (k === 'me') { const n = live(P('me').payslips || []).filter(s => s.month + '-01' >= f && s.month + '-01' <= t).length; const sal = live(P('me').txns).some(x => x.cat === 'wages' && x.date >= f && x.date <= t); if (n || sal) rows.push(['🚢', 'Payslips', n ? 'ok' : 'miss', n ? n + ' months' : 'salary received but no payslips', 'data-act="rdGo" data-v="inc"']); }
+  // insurance: every policy you have should have that year's papers
+  const pols = {}; docs(k).filter(d => d.kind === 'ins').forEach(d => { const key = d.policyNo || d.title; (pols[key] = pols[key] || []).push(d); });
+  Object.entries(pols).forEach(([key, l]) => { if (Math.min(...l.map(d => d.fy)) > y) return; const has = l.some(d => d.fy === y); rows.push(['🛡️', l[0].title || key, has ? 'ok' : 'miss', l[0].policyNo ? 'Policy ' + l[0].policyNo : '', has ? `data-act="docEdit" data-prof="${k}" data-id="${l.find(d => d.fy === y).id}"` : `data-act="docAdd" data-prof="${k}" data-kind="ins" data-pre='${esc(JSON.stringify({ insType: l[0].insType, insurer: l[0].insurer, policyNo: l[0].policyNo, sumAssured: l[0].sumAssured, fy: y }))}'`]); });
+  // investments used that year → their statements / reports
+  const tx = txIn(k, f, t), used = new Set(tx.filter(x => catGroup(x.cat) === 'invest').map(brokerOf).filter(Boolean));
+  if ([...used].some(b => /Coin|NJ|Mutual/.test(b))) { const has = D.some(d => d.kind === 'mf'); rows.push(['📈', 'Mutual fund statement (CAS)', has ? 'ok' : 'miss', [...used].filter(b => /Coin|NJ|Mutual/.test(b)).join(', '), has ? '' : `data-act="docAdd" data-prof="${k}" data-kind="mf" data-pre='${esc(JSON.stringify({ fy: y }))}'`]); }
+  [...used].filter(b => ['Zerodha', 'Delta Exchange', 'Fyers', 'Flattrade', 'Shoonya'].includes(b)).forEach(b => { const has = D.some(d => d.kind === 'broker' && d.broker === b); rows.push(['💹', b + ' — tax P&L report', has ? 'ok' : 'miss', '', has ? '' : `data-act="docAdd" data-prof="${k}" data-kind="broker" data-pre='${esc(JSON.stringify({ fy: y, broker: b, report: 'Tax P&L' }))}'`]); });
+  if (k !== 'parents' || tx.length) ['AIS / 26AS', 'ITR-V / acknowledgement'].forEach(dt => { const has = D.some(d => d.kind === 'tax' && d.docType === dt); rows.push(['🧾', dt, has ? 'ok' : 'miss', '', has ? '' : `data-act="docAdd" data-prof="${k}" data-kind="tax" data-pre='${esc(JSON.stringify({ fy: y, docType: dt }))}'`]); });
+  const ok = rows.filter(r => r[2] === 'ok').length;
+  return `<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><select class="inp" data-act="chkFy" style="width:auto">${ys.map(v => `<option value="${v}" ${v === y ? 'selected' : ''}>${fyL(v)}</option>`).join('')}</select><span class="sp"></span><b>${ok} of ${rows.length} ready</b></div>
+  <div class="card" style="padding:4px 14px">${rows.map(([ic, l, st, sub, act]) => `<div class="txc" ${act} style="cursor:pointer"><span class="itile" style="--ic:${st === 'ok' ? '#10b981' : st === 'part' ? '#f59e0b' : '#ef4444'}">${st === 'ok' ? '✅' : st === 'part' ? '🟡' : '❌'}</span><div class="mid"><div class="t1">${ic} ${esc(l)}</div><div class="t2">${esc(sub || (st === 'ok' ? 'uploaded' : 'tap to add'))}</div></div></div>`).join('') || emptyBox('✅', 'Nothing to collect for this year', '', '')}</div>
+  <div class="small muted mt">Built from what the app sees: your accounts, policies you’ve added, and the platforms you put money into that year.</div>`;
+}
+const _stmtsV = VIEWS.stmts;
+VIEWS.stmts = () => {
+  if (!DOCF.loaded) refreshLocalFiles().then(() => { if (VIEW.tab === 'stmts') rerender(); });
+  const s = VIEW.sub.dSec || 'bank', k = VIEW.sub.stProf || 'me';
+  const tabs = `<div class="tabs">${DOC_KINDS.map(([id, ic, l]) => `<button class="tab ${s === id ? 'on' : ''}" data-act="rdSec" data-base="dSec" data-v="${id}">${ic} ${l}</button>`).join('')}</div>`;
+  if (s === 'bank') return tabs + _stmtsV();
+  if (s === 'slip') { setTimeout(() => { VIEW.tab = 'me'; VIEW.sub.meSec = 'inc'; VIEW.sub.dSec = 'bank'; render(); setTimeout(() => { const el = $('#slip_file'); if (el) el.closest('.sec').scrollIntoView({ block: 'start' }); }, 300); }, 0); return tabs; }
+  const who = `<div class="flex" style="margin-bottom:12px"><div class="seg">${[['me', 'Me'], ['wife', wifeName()], ['parents', 'Mom & Dad']].map(([p, l]) => `<button class="${k === p ? 'on' : ''}" data-act="stProf" data-p="${p}">${esc(l)}</button>`).join('')}</div></div>`;
+  return tabs + who + (s === 'check' ? checklist(k) : docList(k, s));
+};
+TITLES.stmts = 'Documents';
+[NAV, MORE_TILES].forEach(L => L.forEach(n => { if (n[0] === 'stmts') { if (L === NAV) { n[1] = 'Documents'; } else n[2] = 'Documents'; } }));
+// NRI tax pack: papers saved for that year
+const _taxV = VIEWS.tax;
+VIEWS.tax = () => { const y = VIEW.sub.taxFy ?? fyNum(today()) - 1, D = docs('me').filter(d => d.fy === y && ['broker', 'tax', 'mf', 'ins'].includes(d.kind));
+  return _taxV() + `<div class="sec">📂 Documents saved for ${fyL(y)}<span class="sp"></span><button class="btn sm" data-act="go" data-tab="stmts" data-dchk="1">FY checklist</button></div><div class="card" style="padding:4px 14px">${D.length ? D.map(d => docCard('me', d)).join('') : '<div class="muted small" style="padding:10px 0">None yet — add broker tax P&L, AIS / 26AS and ITR-V in 📂 Documents.</div>'}</div>`; };
+document.addEventListener('click', e => { const el = e.target.closest('[data-dchk]'); if (el) { VIEW.sub.dSec = 'check'; VIEW.sub.chkFy = VIEW.sub.taxFy ?? fyNum(today()) - 1; VIEW.sub.stProf = 'me'; } }, true);
+Object.assign(ACT, {
+  docAdd: el => { let pre = {}; try { pre = el.dataset.pre ? JSON.parse(el.dataset.pre) : {}; } catch (e) { } docModal(el.dataset.prof || 'me', el.dataset.kind, null, pre); },
+  docEdit: el => { const d = docs(el.dataset.prof).find(x => x.id === el.dataset.id); if (d) docModal(el.dataset.prof, d.kind, d.id); },
+  docOpen: el => openDoc(el.dataset.prof, el.dataset.id, false),
+  docDl: el => openDoc(el.dataset.prof, el.dataset.id, true),
+  docFy: el => { VIEW.sub.dfy = el.dataset.v; VIEW.keepScroll = true; rerender(); },
+  syncFiles: el => { S.settings.sync.files = !S.settings.sync.files; save(); rerender(); toast(S.settings.sync.files ? 'Files will go to Drive at the next Sync' : 'Files stay on this device'); },
+  scriptCheck: async () => { const o = $('#scrOut'); if (o) o.textContent = 'Checking…'; try { const r = await callScript({ key: S.settings.sync.key, action: 'ping' }); if (o) o.innerHTML = r.v >= 2 ? '✅ Your Apps Script supports document files.' : '⚠️ ' + esc(SCRIPT_MSG); } catch (e) { if (o) o.innerHTML = '⚠️ ' + esc(oldScript(e) ? SCRIPT_MSG : e.message); } },
+});
+Object.assign(CHANGE, { chkFy: el => { VIEW.sub.chkFy = +el.value; rerender(); } });
+document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.act === 'docQ') { clearTimeout(RD.dq); RD.dq = setTimeout(() => { VIEW.sub.dq = el.value; VIEW.keepScroll = true; rerender(); const i = $('[data-act=docQ]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 300); } });
+// Sync & Update: the files switch
+const _syncupV = VIEWS.syncup;
+VIEWS.syncup = () => {
+  const on = !!S.settings.sync.files, n = PROFS.reduce((a, k) => a + docs(k).filter(d => d.file).length, 0), up = PROFS.reduce((a, k) => a + docs(k).filter(d => d.file && d.drive).length, 0);
+  return `<div class="card" style="margin-bottom:16px"><h3>📂 Document files <small>${n} files · ${up} in Drive</small></h3>
+    <label class="chk"><input type="checkbox" data-act="syncFiles" ${on ? 'checked' : ''} onclick="ACT.syncFiles(this)"> Also upload document files when I press Sync</label>
+    <div class="small muted mt">Leave this <b>off on the ship</b> — Sync then sends only the small details (policy numbers, dates, amounts). Turn it on at home / on good Wi-Fi: PDFs go to your Drive <b>encrypted with your encryption password</b>, and other devices download a file only when you open it.</div>
+    <div class="flex mt"><button class="btn sm" data-act="scriptCheck">🔌 Check my Apps Script</button><span id="scrOut" class="small"></span></div></div>` + _syncupV();
+};
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
