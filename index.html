@@ -886,7 +886,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.11';
+const APP_VER = '3.12';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1682,7 +1682,7 @@ function rerender() { VIEW.keepScroll = true; render(); }
 
 /* ---------- reusable bits ---------- */
 const accName = (profKey, id) => { const a = P(profKey).accounts.find(x => x.id === id); return a ? a.name : '—'; };
-function accOptions(profKey, sel, withNone = true) { return (withNone ? `<option value="">—</option>` : '') + P(profKey).accounts.filter(a => !a.deleted).map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.name)}${a.last4 ? ' ··' + a.last4 : ''}${a.status === 'closed' ? ' (closed)' : ''}</option>`).join(''); }
+function accOptions(profKey, sel, withNone = true) { return (withNone ? `<option value="">—</option>` : '') + P(profKey).accounts.filter(a => !a.deleted && (a.type !== 'UPI app' || a.id === sel)).map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.name)}${a.last4 ? ' ··' + a.last4 : ''}${a.status === 'closed' ? ' (closed)' : ''}</option>`).join(''); }
 function catOptions(sel, types = ['exp', 'inv', 'inc', 'xfer']) { return types.map(ty => `<optgroup label="${{ exp: 'Expenses', inv: 'Investments (not counted as spending)', inc: 'Income', xfer: 'Transfers (not counted)' }[ty]}">` + CATS.filter(c => c[3] === ty).map(c => `<option value="${c[0]}" ${c[0] === sel ? 'selected' : ''}>${c[2]} ${c[1]}</option>`).join('') + '</optgroup>').join('') + (types.includes('exp') ? '' : `<optgroup label="${esc(wifeName())}"><option value="wife" ${sel === 'wife' ? 'selected' : ''}>👩 Received from ${esc(wifeName())} (reduces ${esc(wifeName())} expense)</option></optgroup>`); }
 function appOptions(sel) { return `<option value="">Unknown</option>` + UPI_APPS.map(a => `<option ${a === sel ? 'selected' : ''}>${a}</option>`).join(''); }
 function kpi(lab, val, foot, cls = '') { return `<div class="card kpi ${cls}"><div class="lab">${lab}</div><div class="val num">${val}</div>${foot ? `<div class="foot">${foot}</div>` : ''}</div>`; }
@@ -1752,7 +1752,7 @@ VIEWS.dashboard = () => {
   </div>`;
 };
 function accountsSummary(profKey) {
-  const accs = P(profKey).accounts.filter(a => !a.deleted && a.status !== 'closed');
+  const accs = P(profKey).accounts.filter(a => !a.deleted && a.status !== 'closed' && a.type !== 'UPI app');
   let nre = 0, nro = 0, oth = 0;
   const rows = accs.map(a => { const b = accountBalance(profKey, a.id); if (b) { if (a.type === 'NRE') nre += b.bal; else if (a.type === 'NRO') nro += b.bal; else oth += b.bal; } return `<div class="row"><div class="ico">${a.type === 'Cash' ? '💵' : '🏦'}</div><div class="mid"><div class="t1">${esc(a.name)}${a.last4 ? ` <span class="muted small">··${esc(a.last4)}</span>` : ''}</div><div class="t2">${b ? 'as of ' + fmtDate(b.date) + (b.src === 'manual' ? ' (manual)' : '') : 'No statement yet'}</div></div><div class="r num b">${b ? rs(b.bal) : '—'}</div></div>`; }).join('');
   const split = profKey === 'me' && (nre || nro) ? `<div class="flex small mt" style="margin-bottom:6px"><span class="pill acc">NRE ${rsShort(nre)}</span><span class="pill">NRO ${rsShort(nro)}</span>${oth ? `<span class="pill">Other ${rsShort(oth)}</span>` : ''}<span class="sp"></span><b class="num">${rs(nre + nro + oth)}</b></div>` : '';
@@ -3446,7 +3446,7 @@ function mergeInto(prof, t, oldId) {
 function dupRowCell(r, i) {
   if (!r.dup) return `<span class="conf ${r.conf}" title="Category confidence"></span>`;
   const e = P(IMPORT.profKey).txns.concat(IMPORT.extraPool || []).find(x => x.id === r.matchId);
-  const opts = [['skip', 'Skip — already saved'], ['keep', 'Keep both (not a duplicate)']].concat(e && (e.source === 'manual' || e.source === 'bill') ? [['replace', 'Use bank entry, remove mine']] : []);
+  const opts = [['skip', 'Skip — already saved'], ['keep', 'Keep both (not a duplicate)']].concat(e && (e.source === 'manual' || e.source === 'bill' || e.source === 'upi') ? [['replace', 'Use bank entry, remove mine']] : []);
   return `<div style="min-width:190px"><span class="pill ${r.dup === 'sure' ? '' : 'amb'}">${r.dup === 'sure' ? 'Duplicate' : 'Possible duplicate'}</span><div class="small muted" style="margin:3px 0;white-space:normal">${esc(r.why)}${e ? (e._file ? ' · also in ' + esc(e._file) : ' · saved: ' + esc((e.payee || e.desc || '').slice(0, 28))) : ''}</div><select class="inp" style="padding:3px 6px" data-ipa="${i}">${opts.map(([k, l]) => `<option value="${k}" ${r.action === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
 }
 
@@ -4116,7 +4116,7 @@ function feBody() {
 function feKeep() { if (!FE) return; const n = $('#fe_note'), d = $('#fe_date'), a = $('#fe_acc'), g = $('#fe_again'); if (n) FE.note = n.value; if (d) FE.date = d.value; if (a) FE.acc = a.value; if (g) FE.again = g.checked; }
 function feRender() { feKeep(); const mb = $('#mask .modal.fem .mb'); if (mb) mb.innerHTML = feBody(); }
 function fastEntry(prof = 'me') {
-  const accs = P(prof).accounts.filter(a => !a.deleted && a.status !== 'closed');
+  const accs = P(prof).accounts.filter(a => !a.deleted && a.status !== 'closed' && a.type !== 'UPI app');
   const lastAcc = (live(P(prof).txns).filter(t => t.source === 'manual').sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0] || {}).account;
   FE = { prof, dir: 'dr', cat: '', amt: '', note: '', date: today(), acc: lastAcc || (accs.find(a => a.type === 'Cash') || accs[0] || {}).id || '', pay: 'PhonePe', again: FE ? FE.again : false };
   modal('⚡ Quick entry' + (prof === 'me' ? '' : ' · ' + (prof === 'wife' ? esc(wifeName()) : 'Parents')), feBody(), '', {});
@@ -4252,7 +4252,7 @@ function batchPrepare() {
   const B = BATCH, pools = {};
   B.items.forEach((it, k) => { it.k = k; it.same = ''; });
   // same statement picked twice
-  B.items.forEach((it, k) => { if (it.err) return; const sig = it.txns.length + '|' + it.txns.map(t => t.date + t.amount + t.dir).join(',');
+  B.items.forEach((it, k) => { if (it.err) return; const tl = it.upi ? it.upi.rows : it.txns; const sig = (it.upi ? it.upi.app : '') + tl.length + '|' + tl.map(t => t.date + t.amount + t.dir).join(',');
     const o = B.items.slice(0, k).find(x => !x.err && x.sig === sig); it.sig = sig; if (o) { it.same = o.file; if (!it.userInc) it.include = false; } });
   [...B.items].sort((a, b) => itFirst(a).localeCompare(itFirst(b))).forEach(it => {
     if (it.err || !it.accId) { it.rows = null; return; }
@@ -4266,6 +4266,7 @@ function batchModal() {
   const B = BATCH, its = B.items;
   let tot = 0, files = 0;
   const cards = its.map((it, k) => {
+    if (it.upi && !it.err) { const h = upiCard(it, k); if (it.include) { tot += it._cnt; files++; } return h; }
     if (it.err) return `<div class="card bit err"><div class="flex"><span class="itile" style="--ic:#ef4444">${it.needPw ? '🔒' : '⚠️'}</span><div class="mid"><b>${esc(it.file)}</b><div class="small ${it.needPw ? 'muted' : 'dr'}">${esc(it.err)}</div></div></div>
       ${it.needPw ? `<div class="flex mt"><input class="inp" type="password" autocomplete="off" placeholder="PDF password (often customer ID or date of birth)" data-bpw="${k}" style="flex:1"><button class="btn sm pri" data-act="batchRetry" data-k="${k}">Unlock</button></div>` : ''}</div>`;
     const dates = it.txns.map(t => t.date).sort(), last4 = (it.meta.accountNo || '').replace(/\D/g, '').slice(-4);
@@ -4310,8 +4311,12 @@ Object.assign(ACT, {
       it.extraPool = null; buildRows(it, null);   // re-check against everything saved so far (incl. files imported just before)
       const s = importRows(it, it.link !== false); Object.keys(st).forEach(x => st[x] += s[x]); n++;
     });
+    // UPI app statements last, so they can find the bank entries imported just now
+    const us = { tagged: 0, added: 0, again: 0, already: 0 };
+    B.items.filter(it => it.upi && it.include && !it.err).forEach(it => { const s = upiCommit(prof, it.upi, it.file); Object.keys(us).forEach(x => us[x] += s[x]); n++; });
+    if (us.tagged || us.added) { st.added += us.added; }
     save(); closeModal(); BATCH = null; IMPORT = null;
-    toast(`${n} file${n === 1 ? '' : 's'} · ${st.added} new entries${st.repaired ? ' · ' + st.repaired + ' earlier entries updated' : ''}${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 6000);
+    toast(`${n} file${n === 1 ? '' : 's'} · ${st.added} new entries${us.tagged ? ' · ' + us.tagged + ' bank entries tagged with UPI app' : ''}${us.again + us.already ? ' · ' + (us.again + us.already) + ' UPI payments already in' : ''}${st.repaired ? ' · ' + st.repaired + ' earlier entries updated' : ''}${st.skipped ? ' · ' + st.skipped + ' duplicates skipped' : ''}${st.merged ? ' · ' + st.merged + ' merged' : ''}${st.linked ? ' · ' + st.linked + ' bill payments matched' : ''}${st.review ? ' · ' + st.review + ' to review' : ''}`, 6000);
     VIEW.sub[prof === 'me' ? 'money' : prof] = st.review ? 'review' : 'txns';
     render();
   },
@@ -4574,6 +4579,284 @@ VIEWS.parents = () => {
   return bar + (onSons ? sonsView() : html.slice(tabs.length));
 };
 TITLES.parents = 'Mom & Dad';
+
+/* UPI app statement parser (PhonePe, Google Pay, Paytm) — works on pdf.js text items (x/y positions). */
+(function (root) {
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const p2 = n => String(n).padStart(2, '0');
+  const mk = (y, m, d) => (y && m && d && m <= 12 && d <= 31) ? y + '-' + p2(m) + '-' + p2(d) : null;
+  const mon = s => MON[String(s || '').slice(0, 3).toLowerCase()];
+  // "Apr 01, 2022" · "23 Aug, 2026" · "01 May 2026" · "1 APR'24" · "25 Mar" (no year → yr = null)
+  function pdate(s) {
+    s = String(s || '').trim(); let m;
+    if ((m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/))) return { d: mk(+m[3], mon(m[1]), +m[2]) };
+    if ((m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/))) return { d: mk(+m[3], mon(m[2]), +m[1]) };
+    if ((m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s*'\s*(\d{2})$/))) return { d: mk(2000 + +m[3], mon(m[2]), +m[1]) };
+    if ((m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})$/)) && mon(m[2])) return { d: null, m: mon(m[2]), day: +m[1] };
+    return null;
+  }
+  const isTime = s => /^\d{1,2}:\d{2}(:\d{2})?\s*[AP]M$/i.test(String(s).trim());
+  const AMT_RE = /^[-+]?\s*(₹|INR|Rs\.?)?\s*[\d,]+(\.\d+)?$/i;
+  const num = s => { const v = parseFloat(String(s).replace(/₹|INR|Rs\.?/gi, '').replace(/[^\d.]/g, '')); return isNaN(v) ? null : v; };
+  const FOOT = /^(page\s*\d+\s*of\s*\d+|page|of|\d{1,3}|for any queries,?|contact us|this is a system generated statement.*|note:.*|received\. any payments.*)$/i;
+
+  function detect(text) {
+    if (/Paytm Statement for|Passbook Payments History/i.test(text)) return 'Paytm';
+    if (/support\.phonepe\.com|Transaction Statement for \+?\d/i.test(text) && /UTR No/i.test(text)) return 'PhonePe';
+    if (/Google Pay/i.test(text) && /UPI Transaction ID/i.test(text)) return 'GPay';
+    return null;
+  }
+  function period(text) {
+    let m = text.match(/([A-Za-z]{3}\s+\d{1,2},\s+\d{4})\s*-\s*([A-Za-z]{3}\s+\d{1,2},\s+\d{4})/);   // PhonePe
+    if (!m) m = text.match(/(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/);    // GPay
+    if (!m) m = text.match(/(\d{1,2}\s+[A-Za-z]{3}\s*'\s*\d{2})\s*-\s*(\d{1,2}\s+[A-Za-z]{3}\s*'\s*\d{2})/); // Paytm
+    if (!m) return null;
+    const a = pdate(m[1]), b = pdate(m[2]);
+    return a && b && a.d && b.d ? [a.d, b.d] : null;
+  }
+  function parseUpi(pages) {
+    const all = pages.map(p => p.items.map(i => i.str).join(' ')).join(' \n ');
+    const app = detect(all); if (!app) return null;
+    const per = period(all), warnings = [], recs = [];
+    const phone = (all.match(/(?:\+91|\*{4,})?(\d{4,10})\s*,\s*[\w.+-]+@[\w.-]+/) || all.match(/Transaction Statement for \+?(\d+)/i) || [])[1] || '';
+    let H = null;
+    pages.forEach(pg => {
+      const items = pg.items.filter(i => i.str && i.str.trim());
+      const hd = items.find(i => /^Transaction Details$/i.test(i.str.trim()));
+      if (hd) {
+        const near = re => items.find(i => re.test(i.str.trim()) && Math.abs(i.y - hd.y) < 12);
+        H = { y: hd.y, det: hd.x, amt: near(/^Amount$/i), type: near(/^Type$/i), acct: near(/^Your Account$/i), notes: near(/^Notes\s*&\s*Tags$/i) };
+        H.amtX = H.amt ? H.amt.x : 9999;
+        H.detEnd = Math.min(...[H.notes, H.acct, H.type, H.amt].filter(Boolean).map(i => i.x)) - 5;
+      }
+      if (!H) return;
+      const top = hd ? hd.y - 4 : Infinity;
+      const body = items.filter(i => i.y < top && !(FOOT.test(i.str.trim()) && (i.y < 90 || !/^\d+$/.test(i.str.trim()))));
+      const anchors = body.filter(i => i.x < H.det - 5 && pdate(i.str)).sort((a, b) => b.y - a.y);
+      if (!anchors.length) return;
+      const R = anchors.map(a => ({ a, items: [], H }));
+      body.forEach(i => { let best = null; R.forEach(r => { if (r.a.y >= i.y - 6 && (!best || r.a.y < best.a.y)) best = r; }); if (best) best.items.push(i); });
+      R.forEach(r => recs.push(r));
+    });
+    // build rows
+    const rows = [];
+    const yOf = (m, d) => { if (!per) return null; const y0 = +per[0].slice(0, 4), y1 = +per[1].slice(0, 4); for (const y of [y0, y1]) { const x = mk(y, m, d); if (x >= per[0] && x <= per[1]) return x; } return mk(m >= 4 ? y0 : y1, m, d); };
+    recs.forEach(({ a, items, H }) => {
+      const pd = pdate(a.str); const date = pd.d || yOf(pd.m, pd.day);
+      const col = i => i.x < H.det - 5 ? 'L' : (H.amt && (i.x >= H.amtX - 12 || (i.x + (i.w || 0) > H.amtX + 4 && AMT_RE.test(i.str.trim())))) ? 'A' : i.x < H.detEnd ? 'D' : H.notes && i.x >= H.notes.x - 5 && (!H.acct || i.x < H.acct.x - 5) ? 'N' : H.acct && i.x >= H.acct.x - 5 ? 'C' : H.type && i.x >= H.type.x - 5 ? 'T' : 'D';
+      const byCol = { L: [], A: [], D: [], N: [], C: [], T: [] }; items.forEach(i => byCol[col(i)].push(i));
+      const lines = arr => { const g = []; arr.slice().sort((p, q) => q.y - p.y || p.x - q.x).forEach(i => { const l = g.find(x => Math.abs(x.y - i.y) <= 2.5); if (l) l.t.push(i); else g.push({ y: i.y, t: [i] }); }); return g.map(l => l.t.sort((p, q) => p.x - q.x).map(i => i.str.trim()).join(' ')); };
+      const time = (byCol.L.find(i => isTime(i.str)) || {}).str || '';
+      const det = lines(byCol.D), mk1 = /^(UPI ID|UPI Transaction ID|Transaction ID|UTR No|UPI Ref No|Debited from|Credited to)\b/i;
+      const fi = det.findIndex(l => mk1.test(l)), title = (fi < 0 ? det : det.slice(0, fi)).join(' ').replace(/\s+/g, ' ').trim(), rest = fi < 0 ? [] : det.slice(fi);
+      const rj = rest.join(' | ');
+      const utr = (rj.match(/(?:UTR No|UPI Ref No|UPI Transaction ID)\s*:?\s*(\d{6,})/i) || [])[1] || '';
+      const txnId = (rj.match(/(?<!UPI )Transaction ID\s*:\s*([A-Za-z0-9]+)/i) || [])[1] || '';
+      const upiId = (rj.match(/UPI ID\s*:?\s*([^\s|]+)/i) || [])[1] || '';
+      let bank = '', last = '';
+      let m = rj.match(/(?:Debited from|Credited to)\s+X*(\d{3,4})/i);
+      if (m) last = m[1];
+      else if ((m = rest.find(l => /^(Paid to|Paid by|Paid from|Received in)\s+.+\s\d{4}$/i.test(l) && !mk1.test(l)))) { const z = m.match(/^\S+\s+\S+\s+(.+)\s(\d{4})$/); bank = z[1]; last = z[2]; }
+      if (byCol.C.length) { const c = lines(byCol.C).join(' ').replace(/\s+/g, ' '); const z = c.match(/^(.*?)\s*-\s*(\d{2,4})$/); bank = z ? z[1] : c; last = z ? z[2] : ''; }
+      const amtTxt = lines(byCol.A).join(' '), typ = lines(byCol.T).join(' ');
+      const amount = num(amtTxt.replace(/^[-+]\s*/, ''));
+      let dir = /credit/i.test(typ) ? 'cr' : /debit/i.test(typ) ? 'dr' : /^\s*\+/.test(amtTxt) ? 'cr' : /^\s*-/.test(amtTxt) ? 'dr' : null;
+      if (!dir) dir = /^(Received|Refund|Cashback|Money received)/i.test(title) ? 'cr' : 'dr';
+      const self = /self|own account/i.test(title);
+      const name = title.replace(/^(Paid to|Money sent to|Sent to|Received from|Bill paid\s*-|Paid)\s*/i, '').trim() || title;
+      const note = lines(byCol.N).join(' ').trim();
+      if (!date || amount == null) { warnings.push('Skipped unreadable entry near ' + (a.str || '?')); return; }
+      rows.push({ date, time, amount, dir, title, name, upiId, utr, txnId, bank: bank.trim(), last, note, self });
+    });
+    rows.sort((p, q) => p.date.localeCompare(q.date) || p.time.localeCompare(q.time));
+    // printed totals → sanity check (Paytm, Google Pay)
+    const chk = {};
+    let m = all.match(/(\d+)\s+Payments made/i); if (m) chk.nDr = +m[1];
+    m = all.match(/(\d+)\s+Payments received/i); if (m) chk.nCr = +m[1];
+    const nDr = rows.filter(r => r.dir === 'dr' && !r.self).length, nCr = rows.filter(r => r.dir === 'cr' && !r.self).length;
+    if (chk.nDr != null && chk.nDr !== nDr) warnings.push(`Statement says ${chk.nDr} payments made, ${nDr} read`);
+    if (chk.nCr != null && chk.nCr !== nCr) warnings.push(`Statement says ${chk.nCr} payments received, ${nCr} read`);
+    return { app, period: per, phone, rows, warnings };
+  }
+  const api = { parseUpi, detect };
+  if (typeof module !== 'undefined') module.exports = api; else root.UpiParser = api;
+})(this);
+
+/* ============ UPI app statements (PhonePe · Google Pay · Paytm) ============
+   Each payment is counted once:
+   • found in a bank statement (same UPI ref no., or same amount ±1 day) → the bank entry is just tagged with the app
+   • not in any bank statement yet → added from the app statement into "<App> (UPI app)" and replaced automatically
+     when the matching bank statement is imported later */
+const UPI_MAIN = ['PhonePe', 'GPay', 'Paytm', 'Amazon Pay'];
+
+const isUpiAcc = a => a && a.type === 'UPI app';
+const upiAccId = (k, app) => 'upi_' + k + '_' + app.replace(/\W/g, '');
+function upiAcc(k, app, create) {
+  const id = upiAccId(k, app); let a = P(k).accounts.find(x => x.id === id);
+  if (a && a.deleted && create) { delete a.deleted; touch(a); }
+  if (!a && create) { a = touch({ id, bank: app, type: 'UPI app', name: app + ' (UPI app)', last4: '', status: 'active' }); P(k).accounts.push(a); }
+  return a && !a.deleted ? a : null;
+}
+// which of your bank accounts a UPI row says it used ("XX6450", "Kotak Mahindra Bank 6450", "Kotak Mahindra Bank - 50")
+function upiBankAccs(k, r) {
+  const accs = P(k).accounts.filter(a => !a.deleted && !isUpiAcc(a) && a.type !== 'Cash');
+  if (!r.last) return accs;
+  const w = compact((r.bank || '').split(/\s+/)[0] || '');
+  const hit = accs.filter(a => a.last4 && a.last4.endsWith(r.last) && (r.last.length >= 4 || !w || compact(a.bank + a.name).includes(w)));
+  return hit;
+}
+/* work out what an app statement would do — nothing is changed here */
+function upiPlan(k, u, extra) {
+  const tx = live(P(k).txns).concat(extra || []), used = new Set(), out = [];
+  const appA = upiAcc(k, u.app, false);
+  u.rows.forEach(r => {
+    const t0 = { date: r.date, amount: r.amount, dir: r.dir };
+    // already brought in from an app statement before
+    const prev = tx.find(e => e.source === 'upi' && !used.has(e.id) && ((r.utr && e.upiRef === r.utr) || (r.txnId && e.upiTxn === r.txnId)) && sameMoney(t0, e));
+    if (prev) { used.add(prev.id); out.push({ r, kind: 'again', e: prev }); return; }
+    const accs = upiBankAccs(k, r).map(a => a.id), inAcc = e => !accs.length ? !isUpiAcc(P(k).accounts.find(a => a.id === e.account)) : accs.includes(e.account);
+    let best = null;
+    // 1. same UPI reference number in the bank narration
+    if (r.utr) best = tx.find(e => e.source !== 'upi' && !used.has(e.id) && sameMoney(t0, e) && utrOf(e) === r.utr && nearDays(t0, e, 5));
+    // 2. bank line without a ref no. → same account, amount, ±1 day
+    if (!best && accs.length) { const c = tx.filter(e => e.source !== 'upi' && !used.has(e.id) && inAcc(e) && sameMoney(t0, e) && nearDays(t0, e, 1) && !utrOf(e) && (!e.mode || ['UPI', 'Other', 'Mobile banking'].includes(e.mode))); best = c.sort((a, b) => Math.abs(daysBetween(a.date, t0.date)) - Math.abs(daysBetween(b.date, t0.date)))[0]; }
+    if (best) { used.add(best.id); out.push({ r, kind: 'bank', e: best, done: best.app === u.app && best.upiRef === r.utr }); return; }
+    out.push({ r, kind: 'new', accs });
+  });
+  return { u, k, items: out, appA };
+}
+function upiNote(r) { return r.note && !/^\d+@/.test(r.note) && r.note.length > 2 ? r.note : ''; }
+/* apply it */
+function upiCommit(k, u, file) {
+  const pl = upiPlan(k, u), prof = P(k), acc = upiAcc(k, u.app, true);
+  // statement period → Statements tab
+  const per = u.period || [u.rows[0].date, u.rows[u.rows.length - 1].date];
+  acc.stmts = acc.stmts || []; if (!acc.stmts.some(s => s.from === per[0] && s.to === per[1])) acc.stmts.push({ from: per[0], to: per[1], file, at: nowIso() });
+  const fy = +fyOf(per[0]).slice(3, 7); if (!acc.stmtFrom || fy < acc.stmtFrom) acc.stmtFrom = fy;
+  touch(acc);
+  const st = { tagged: 0, added: 0, again: 0, already: 0 };
+  pl.items.forEach(({ r, kind, e, done }) => {
+    if (kind === 'again') { st.again++; return; }
+    if (kind === 'bank') {
+      if (done) { st.already++; return; }
+      const t = prof.txns.find(x => x.id === e.id); if (!t) return;
+      Object.assign(t, { app: u.app, appConf: 'h', upiRef: r.utr || t.upiRef || '', upiName: r.name, upiFile: file }); const n = upiNote(r); if (n && !t.upiNote) t.upiNote = n;
+      touch(t); st.tagged++; return;
+    }
+    const desc = `UPI/${r.name}/${r.utr || r.txnId || ''}/${r.upiId || r.title}`;
+    const t = { id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc, ref: r.utr || r.txnId || '', account: acc.id, source: 'upi', upiRef: r.utr || '', upiTxn: r.txnId || '', upiName: r.name, upiFile: file, upiL: r.last || '', upiBank: r.bank || '', time: r.time, seq: 0 };
+    const c = classify(t, k); Object.assign(t, { cat: r.self ? 'self' : c.cat, conf: c.conf, for: c.for || '', person: c.person, via: c.via || '', friendId: c.friendId, loanId: c.loanId || '' });
+    t.app = u.app; t.appConf = 'h'; t.payee = r.name; t.mode = 'UPI'; const n = upiNote(r); if (n) t.note = n;
+    prof.txns.push(touch(t)); st.added++;
+    if (t.cat === 'friend' && t.friendId) { const f = prof.friends.find(x => x.id === t.friendId); if (f) addFriendEntryFromTxn(f, t); }
+  });
+  return st;
+}
+const upiFromTxt = r => r.last ? (r.bank ? r.bank.replace(/\s*(Mahindra|Bank|of India|Limited)\b/gi, '').trim() + ' ' : '') + '··' + r.last : '';
+
+/* ---------- read files: UPI statements go through the same multi-file window ---------- */
+const _readItemBank = readItem;
+readItem = async function (it, pw) {
+  if (/\.pdf$/i.test(it.file) && window.UpiParser) {
+    try {
+      const pages = await StmtParser.readPdf(window.pdfjsLib, new Uint8Array(await it.f.arrayBuffer()), pw || undefined);
+      const u = UpiParser.parseUpi(pages);
+      if (u) {
+        if (!u.rows.length) throw new Error('No payments found in this ' + u.app + ' statement.');
+        Object.assign(it, { upi: u, meta: { bank: u.app }, txns: [], warnings: u.warnings, err: null, needPw: false, include: true, rows: null, accId: null });
+        return;
+      }
+    } catch (e) { const m = String(e && (e.message || e)); if (/No payments found/.test(m)) { Object.assign(it, { err: m, include: false }); return; } if (/password/i.test(m)) { it.needPw = true; it.include = false; it.err = pw ? 'Wrong password for this file — try another.' : 'This PDF needs a password.'; return; } }
+  }
+  delete it.upi;
+  return _readItemBank(it, pw);
+};
+const _readStatementBank = readStatement;
+readStatement = async function (profKey) {
+  const fl = [...$('#imp_file').files], f = fl[0];
+  if (fl.length === 1 && f && /\.pdf$/i.test(f.name)) {
+    try { const pages = await StmtParser.readPdf(window.pdfjsLib, new Uint8Array(await f.arrayBuffer()), $('#imp_pw').value || undefined); if (UpiParser.parseUpi(pages)) return readBatch(profKey, fl, $('#imp_pw').value || undefined); } catch (e) { }
+  }
+  return _readStatementBank(profKey);
+};
+function upiCard(it, k) {
+  const u = it.upi, B = BATCH;
+  // bank statements in this same window count too
+  const extra = B.items.filter(x => x !== it && x.include && !x.err && x.accId && x.rows).flatMap(x => x.rows.filter(r => r.sel).map(r => ({ ...r, id: 'bx' + x.k + '_' + r.seq, source: 'import' })));
+  const pl = upiPlan(B.profKey, u, extra); it.plan = pl;
+  const n = t => pl.items.filter(x => x.kind === t).length, nb = pl.items.filter(x => x.kind === 'bank' && !x.done).length, nd = pl.items.filter(x => x.kind === 'bank' && x.done).length;
+  const froms = [...new Set(u.rows.map(upiFromTxt).filter(Boolean))].map(f => { const r = u.rows.find(x => upiFromTxt(x) === f), a = upiBankAccs(B.profKey, r); return `<span class="pill ${a.length ? 'grn' : 'amb'}">${esc(f)} → ${a.length ? esc(a.map(x => x.name).join(' / ')) : 'not in your accounts'}</span>`; }).join(' ');
+  const dr = u.rows.filter(r => r.dir === 'dr'), cr = u.rows.filter(r => r.dir === 'cr');
+  if (it.include) it._cnt = n('new') + nb; else it._cnt = 0;
+  return `<div class="card bit ${it.include ? '' : 'off'}"><div class="flex" style="align-items:flex-start"><label class="chk" style="margin-top:8px"><input type="checkbox" data-binc="${k}" ${it.include ? 'checked' : ''}></label>
+    <span class="itile" style="--ic:${APP_COLOR[u.app] || '#8b5cf6'}">📱</span><div class="mid"><b>${esc(it.file)}</b><div class="small muted">${esc(u.app)} UPI statement · ${u.period ? fmtDate(u.period[0]) + ' → ' + fmtDate(u.period[1]) : ''} · paid ${rs(dr.reduce((s, r) => s + r.amount, 0))} (${dr.length}) · received ${rs(cr.reduce((s, r) => s + r.amount, 0))} (${cr.length})</div>
+    <div class="small" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${froms}</div></div></div>
+    <div class="bstats"><span><b>${u.rows.length}</b> in file</span><span><b>${nb + nd}</b> found in bank statement${nb ? ` (${nb} get tagged ${esc(u.app)})` : ''}</span><span class="grn"><b>${n('new')}</b> not in any bank statement → added</span>${n('again') ? `<span><b>${n('again')}</b> already imported</span>` : ''}</div>
+    ${it.warnings && it.warnings.length ? `<div class="small" style="color:var(--amb);margin-top:6px">⚠ ${esc(it.warnings.slice(0, 3).join(' · '))}</div>` : ''}</div>`;
+}
+
+/* ---------- bank statement imported later: replace the app-only entries ---------- */
+const _dupScore = dupScore;
+dupScore = function (r, e) {
+  if (e.source === 'upi') {
+    if (!sameMoney(r, e)) return null;
+    if (e.upiL) { const a = PROFS.map(q => P(q).accounts.find(x => x.id === r.account)).find(Boolean); if (a && a.last4 && !a.last4.endsWith(e.upiL)) return null; }
+    const ur = utrOf(r);
+    if (ur && e.upiRef) return ur === e.upiRef && nearDays(r, e, 5) ? { lvl: 'sure', why: 'Same UPI ref no. — was added from your ' + e.app + ' statement', manual: true } : null;
+    return nearDays(r, e, 1) ? { lvl: 'maybe', why: 'Same amount — added from your ' + e.app + ' statement on ' + fmtDate(e.date), manual: true } : null;
+  }
+  return _dupScore(r, e);
+};
+const _markDup = markDuplicates;
+markDuplicates = function (prof, rows, extraPool) {
+  const acc = rows[0] && rows[0].account;
+  const upiOnly = live(P(prof).txns).filter(e => e.source === 'upi' && e.account !== acc);
+  return _markDup(prof, rows, (extraPool || []).concat(upiOnly.map(e => Object.assign(Object.create(e), { account: acc, _upi: true }))));
+};
+const _mergeInto = mergeInto;
+mergeInto = function (prof, t, oldId) {
+  const o = P(prof).txns.find(x => x.id === oldId);
+  if (o && o.source === 'upi') { ['upiRef', 'upiName', 'upiNote', 'upiFile'].forEach(x => { if (o[x]) t[x] = o[x]; }); t.app = o.app; t.appConf = 'h'; if (!o.reviewed && !o.userSet) { const keep = ['cat', 'conf', 'note']; keep.forEach(x => { if (o[x] && (x !== 'cat' || t.cat === 'other' || t.cat === 'otherinc')) t[x] = o[x]; }); } }
+  return _mergeInto(prof, t, oldId);
+};
+
+/* ---------- UPI apps page ---------- */
+function upiPeriod() { const p = VIEW.sub.upiPer || 'all', td = today(); if (p === 'all') return ['0000', '9999']; if (p === 'm0') return [td.slice(0, 7) + '-01', td]; if (p === 'm1') { const d = addDays(td.slice(0, 7) + '-01', -1); return [d.slice(0, 7) + '-01', d]; } const y = fyNum(td) - (p === 'fy1' ? 1 : 0); return fyRange(y); }
+VIEWS.upi = () => {
+  const k = VIEW.sub.upiProf || 'me', [f, t2] = upiPeriod(), sel = VIEW.sub.upiSel;
+  const tx = live(P(k).txns).filter(t => t.date >= f && t.date <= t2 && (t.mode === 'UPI' || t.app || t.source === 'upi'));
+  const appOf = t => UPI_MAIN.includes(t.app) ? t.app : 'Unknown';
+  const cards = UPI_MAIN.concat(['Unknown']).map(a => {
+    const x = tx.filter(t => appOf(t) === a), out = x.filter(t => t.dir === 'dr' && t.cat !== 'self'), inn = x.filter(t => t.dir === 'cr' && t.cat !== 'self'), only = x.filter(t => t.source === 'upi').length;
+    const acc = upiAcc(k, a, false), sts = acc ? (acc.stmts || []).slice().sort((p, q) => p.from.localeCompare(q.from)) : [];
+    if (a === 'Unknown' && !x.length) return '';
+    return `<div class="card sonc upic ${sel === a ? 'on' : ''}" data-act="upiSel" data-a="${a}" style="cursor:pointer"><span class="itile big" style="--ic:${APP_COLOR[a] || '#64748b'}">${a === 'Unknown' ? '❔' : '📱'}</span><div class="mid"><div class="t1">${a === 'Unknown' ? 'Other / app not known' : esc(a)}</div>
+      <div class="sonrow"><span>Paid <b class="dr num">${rs(out.reduce((s, t) => s + t.amount, 0))}</b></span><span>Received <b class="cr num">${rs(inn.reduce((s, t) => s + t.amount, 0))}</b></span></div>
+      <div class="t2">${x.length} payment${x.length === 1 ? '' : 's'}${only ? ` · ${only} only in app statement` : ''}</div>
+      <div class="t2">${a === 'Unknown' ? 'UPI payments the bank didn’t name an app for — upload app statements to fill these in' : sts.length ? '📄 ' + sts.map(s => fmtDate(s.from).replace(/^\d+ /, '') + '–' + fmtDate(s.to).replace(/^\d+ /, '')).join(', ') : 'No statement uploaded yet'}</div></div></div>`;
+  }).join('');
+  let list = '';
+  if (sel) {
+    const x = tx.filter(t => appOf(t) === sel).sort((a, b) => b.date.localeCompare(a.date) || String(b.time || '').localeCompare(String(a.time || '')));
+    const lim = VIEW.sub.upiLim || 150;
+    list = `<div class="sec">${sel === 'Unknown' ? 'Other / app not known' : esc(sel)} — ${x.length} payments<span class="sp"></span><button class="btn sm ghost" data-act="upiSel" data-a="">Close</button></div>
+    <div class="card" style="padding:4px 14px">${x.length ? x.slice(0, lim).map(t => txRow(t, k).replace('<div class="t2">', `<div class="t2">${t.source === 'upi' ? '<span class="pill amb" title="Not in any uploaded bank statement yet — replaced automatically when you import it">📱 app statement only</span> ' : t.upiRef ? '<span class="pill grn" title="Matched with your bank statement">✓ in bank</span> ' : ''}${fmtDate(t.date)} · `)).join('') : emptyBox('📱', 'No payments in this period', 'Change the period above or upload this app’s statement.', '')}
+    ${x.length > lim ? `<div style="text-align:center;padding:10px"><button class="btn sm" data-act="upiMore">Show more (${x.length - lim} left)</button></div>` : ''}</div>`;
+  }
+  const pers = [['m0', 'This month'], ['m1', 'Last month'], ['fy0', 'This FY'], ['fy1', 'Last FY'], ['all', 'All time']];
+  return `<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:12px"><div class="seg">${[['me', 'Me'], ['wife', wifeName()]].map(([p, l]) => `<button class="${k === p ? 'on' : ''}" data-act="upiProf" data-p="${p}">${esc(l)}</button>`).join('')}</div><span class="sp"></span><div class="seg" style="overflow-x:auto;max-width:100%">${pers.map(([p, l]) => `<button class="${(VIEW.sub.upiPer || 'all') === p ? 'on' : ''}" data-act="upiPer" data-p="${p}" style="white-space:nowrap">${l}</button>`).join('')}</div></div>
+  <div class="alert acc">📱 <div>Upload PhonePe, Google Pay or Paytm statements in <b>Import statement</b> or <b>Statements</b> (several at once is fine). Each payment is counted <b>once</b>: if it’s already in your bank statement, that entry just gets the app name; if not, it’s added from the app statement and swapped for the bank entry when you import that later.</div></div>
+  <div class="grid g2 mt">${cards}</div>${list}`;
+};
+Object.assign(ACT, {
+  upiSel: el => { VIEW.sub.upiSel = el.dataset.a || null; VIEW.sub.upiLim = 150; VIEW.keepScroll = true; rerender(); },
+  upiPer: el => { VIEW.sub.upiPer = el.dataset.p; VIEW.keepScroll = true; rerender(); },
+  upiProf: el => { VIEW.sub.upiProf = el.dataset.p; VIEW.sub.upiSel = null; rerender(); },
+  upiMore: () => { VIEW.sub.upiLim = (VIEW.sub.upiLim || 150) + 300; VIEW.keepScroll = true; rerender(); },
+});
+NAV.splice(NAV.findIndex(n => n[0] === 'stmts') + 1, 0, ['upi', 'UPI apps', '📱']);
+TITLES.upi = 'UPI apps';
+MORE_TILES.splice(5, 0, ['upi', '📱', 'UPI apps', '#8b5cf6']);
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
