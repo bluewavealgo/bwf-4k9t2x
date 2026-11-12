@@ -558,6 +558,7 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
 .flowb small{display:block;color:var(--tx2);font-size:12px;margin-bottom:4px}.flowb b{font-size:20px}
 .flowb.grn{--fc:#10b981}.flowb.vio{--fc:#8b5cf6}.flowb.acc{--fc:#3b82f6}.flowb.red{--fc:#ef4444}
 @media(max-width:700px){.flowrow>i{display:none}.flowb{min-width:calc(50% - 8px)}}
+.sbar{display:flex;height:14px;border-radius:8px;overflow:hidden;background:var(--line,#334155)}.sbar i{display:block;height:100%}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -893,7 +894,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '4.0';
+const APP_VER = '4.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -5013,6 +5014,69 @@ papaCard = function () {
 };
 Object.assign(ACT, { carMore: () => { VIEW.sub.carLim = (VIEW.sub.carLim || 60) + 200; VIEW.keepScroll = true; rerender(); } });
 
+/* Seafarer wage account (payslip) parser — V Ships "ADM14a Monthly Wage Account" layout. Works on pdf.js text items. */
+(function (root) {
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const p2 = n => String(n).padStart(2, '0');
+  const dmy = s => { const m = String(s || '').match(/(\d{1,2})\s+([A-Za-z]{3})[a-z]*\s+(\d{4})/); return m && MON[m[2].toLowerCase()] ? m[3] + '-' + p2(MON[m[2].toLowerCase()]) + '-' + p2(+m[1]) : null; };
+  const AMT = /\(?-?[\d,]+\.\d{2}\)?$/;
+  const amt = s => { s = String(s).trim(); const neg = /^\(|^-/.test(s); const v = parseFloat(s.replace(/[(),\s-]/g, '')); return isNaN(v) ? null : (neg ? -v : v); };
+  function lines(items) {
+    const L = [];
+    items.filter(i => i.str && i.str.trim()).sort((a, b) => b.y - a.y || a.x - b.x).forEach(i => { let l = L.find(x => Math.abs(x.y - i.y) <= 2.5); if (!l) L.push(l = { y: i.y, it: [] }); l.it.push(i); });
+    return L.sort((a, b) => b.y - a.y).map(l => l.it.sort((a, b) => a.x - b.x).map(i => i.str.trim()).join('  '));
+  }
+  const detect = text => /WAGE ACCOUNT/i.test(text) && /Wage Month/i.test(text);
+  function parseSlip(ls) {
+    const all = ls.join('\n'), g = re => (all.match(re) || [])[1];
+    const wm = all.match(/Wage Month\s+([A-Za-z]{3})[a-z]*\s+(\d{4})/i); if (!wm) return null;
+    const s = { month: wm[2] + '-' + p2(MON[wm[1].toLowerCase()]), vessel: (g(/Vessel Name\s+(.+)/i) || '').trim(), rank: (g(/Rank\s+(.+?)\s{2,}/i) || '').trim(), currency: g(/Currency\s+([A-Z]{3})/) || 'USD',
+      days: +(g(/No\.?\s*of Days\s+(\d+)/i) || 0), travelDays: +(g(/Travel Days\s+(\d+)/i) || 0), signOn: dmy(g(/Sign On\s+(\d{1,2}\s+\w+\s+\d{4})/i)), earnings: [], deductions: [] };
+    const dr = all.match(/Date\s+(\d{1,2}\s+\w+\s+\d{4})\s*-\s*(\d{1,2}\s+\w+\s+\d{4})/i); if (dr) { s.from = dmy(dr[1]); s.to = dmy(dr[2]); }
+    let sec = null;
+    ls.forEach(l => {
+      const t = l.replace(/\s{2,}/g, '  ').trim();
+      if (/^Contractual Earnings|^Other Earnings|^Earnings/i.test(t) && !AMT.test(t)) { sec = 'earnings'; return; }
+      if (/^Deductions/i.test(t) && !AMT.test(t)) { sec = 'deductions'; return; }
+      if (/^Balances/i.test(t) || /^Total/i.test(t)) { if (/^Balances\b(?!\s+of)/i.test(t)) sec = null; }
+      const m = t.match(/^(.*?)\s{2,}(\(?-?[\d,]+\.\d{2}\)?)$/); if (!m) return;
+      const name = m[1].trim(), v = amt(m[2]);
+      if (/Total Contractual Earnings/i.test(name)) { s.contractTotal = v; return; }
+      if (/^Total Earnings/i.test(name)) { s.totalEarnings = v; sec = null; return; }
+      if (/^Total Deductions/i.test(name)) { s.totalDeductions = Math.abs(v); sec = null; return; }
+      if (/This Month'?s Balance/i.test(name)) { s.monthBal = v; return; }
+      if (/Balance B\/?F/i.test(name)) { s.balBF = v; return; }
+      if (/Balances? of Wages at the Month End/i.test(name)) { s.balEnd = v; return; }
+      if (/Accum/i.test(name)) return;
+      if (/^Total/i.test(name)) return;
+      if (sec === 'earnings') s.earnings.push({ name, amt: v });
+      else if (sec === 'deductions') s.deductions.push({ name, amt: Math.abs(v) });
+    });
+    if (s.totalEarnings == null) s.totalEarnings = s.earnings.reduce((a, x) => a + x.amt, 0);
+    if (s.totalDeductions == null) s.totalDeductions = s.deductions.reduce((a, x) => a + x.amt, 0);
+    // what each deduction means for you
+    const kind = n => /allot/i.test(n) ? 'home' : /final\s*b\.?o\.?w|balance of wages|wages paid|bank transfer|remit/i.test(n) ? 'final' : /cash\s*adv|cash advance|cash on board|cash/i.test(n) ? 'cash' : 'other';
+    s.deductions.forEach(d => d.kind = kind(d.name));
+    const sum = k => Math.round(s.deductions.filter(d => d.kind === k).reduce((a, x) => a + x.amt, 0) * 100) / 100;
+    s.allotUsd = sum('home'); s.finalUsd = sum('final'); s.cashUsd = sum('cash'); s.deductUsd = sum('other');
+    s.remitUsd = Math.round((s.allotUsd + s.finalUsd) * 100) / 100; s.earnedUsd = s.totalEarnings;
+    const chk = Math.round((s.totalEarnings - s.totalDeductions) * 100) / 100;
+    s.ok = s.monthBal == null || Math.abs(chk - s.monthBal) < 0.05;
+    return s;
+  }
+  function parsePayslips(pages) {
+    const ls = pages.flatMap(p => lines(p.items));
+    if (!detect(ls.join('\n'))) return null;
+    const chunks = []; ls.forEach(l => { if (/^WAGE ACCOUNT/i.test(l)) chunks.push([]); if (chunks.length) chunks[chunks.length - 1].push(l); });
+    const slips = chunks.map(parseSlip).filter(Boolean).sort((a, b) => a.month.localeCompare(b.month));
+    const warnings = [];
+    slips.forEach((s, i) => { if (!s.ok) warnings.push(s.month + ': totals don’t add up'); const p = slips[i - 1]; if (p && p.vessel === s.vessel && p.balEnd != null && s.balBF != null && Math.abs(p.balEnd - s.balBF) > 0.05) warnings.push('A payslip seems missing between ' + p.month + ' and ' + s.month + ' (balance ' + p.balEnd + ' → ' + s.balBF + ')'); });
+    return { slips, warnings };
+  }
+  const api = { parsePayslips, detect };
+  if (typeof module !== 'undefined') module.exports = api; else root.PayslipParser = api;
+})(this);
+
 /* ============ v4.0 — simpler layout: Home · Me · ABB · Mom & Dad · More, global search, salary, investments, rent, tax pack ============ */
 const RD = {};
 const sumAmt = arr => arr.reduce((s, t) => s + t.amount, 0);
@@ -5071,32 +5135,90 @@ function incomeTab() {
   ${other.length ? `<div class="sec">Other income — ${perLabel(p)}</div><div class="grid g4">${Object.entries(og).map(([c, v]) => kpi(catIcon(c) + ' ' + esc(catName(c)), rs(v), other.filter(t => t.cat === c).length + ' entries', '')).join('')}</div>` : ''}`;
 }
 
-/* ---------------- 🧾 Payslips (entered by hand now; PDF reading once a sample is shared) ---------------- */
+/* ---------------- 🧾 Payslips (V Ships wage accounts read from PDF, or entered by hand) ---------------- */
 const slips = () => live(P('me').payslips || []).sort((a, b) => b.month.localeCompare(a.month));
 const payslipsIn = (f, t) => slips().filter(s => s.month + '-28' >= f.slice(0, 7) + '-01' && s.month + '-01' <= t);
-function slipMatch(s) {   // the NRE/NRO credit that this payslip's remittance became
-  if (!s.remitInr) return null;
-  const from = s.month + '-01', to = addDays(monthRange(s.month)[1], 45);
-  return salaryTx().filter(t => t.date >= from && t.date <= to).sort((a, b) => Math.abs(a.amount - s.remitInr) - Math.abs(b.amount - s.remitInr))[0] || null;
+const usd = v => '$' + (Math.round((+v || 0) * 100) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// which NRE / NRO salary credit each payslip's money-sent-home became (one credit per payslip, rate must look like USD→INR)
+function slipMatches() {
+  const out = {}, used = new Set(), sal = salaryTx();
+  slips().slice().reverse().forEach(s => {
+    if (s.remitInr) { out[s.id] = { inr: +s.remitInr, manual: true }; return; }
+    if (!s.remitUsd) return;
+    const from = s.month + '-01', to = addDays(monthRange(s.month)[1], 60);
+    const c = sal.filter(t => !used.has(t.id) && t.date >= from && t.date <= to && t.amount / s.remitUsd > 70 && t.amount / s.remitUsd < 100)
+      .sort((a, b) => Math.abs(a.amount / s.remitUsd - 86) - Math.abs(b.amount / s.remitUsd - 86) || a.date.localeCompare(b.date))[0];
+    if (c) { used.add(c.id); out[s.id] = { inr: c.amount, t: c }; }
+  });
+  return out;
 }
+function slipContracts(L) {
+  const g = {}; L.forEach(s => { const k = (s.vessel || '?') + '|' + (s.signOn || s.month); (g[k] = g[k] || []).push(s); });
+  return Object.values(g).map(l => l.sort((a, b) => a.month.localeCompare(b.month))).sort((a, b) => b[0].month.localeCompare(a[0].month));
+}
+const nextYm = m => addDays(m + '-28', 5).slice(0, 7);
 function payslipSection() {
-  const L = slips();
-  const tot = k => L.reduce((s, x) => s + (+x[k] || 0), 0);
-  return `<div class="sec">🧾 Payslips<span class="sp"></span><button class="btn sm" data-act="slipEdit">＋ Add payslip</button><label class="btn sm pri" style="cursor:pointer;text-transform:none;letter-spacing:0">⬆ Upload payslips<input type="file" id="slip_file" multiple accept=".pdf" style="display:none"></label></div>
-  ${L.length ? `<div class="grid g4">${kpi('💵 Earned onboard', '$' + Math.round(tot('earnedUsd')).toLocaleString('en-IN'), L.length + ' payslips', 'grn')}${kpi('💸 Cash taken onboard', '$' + Math.round(tot('cashUsd')).toLocaleString('en-IN'), tot('earnedUsd') ? Math.round(tot('cashUsd') / tot('earnedUsd') * 100) + '% of earnings' : '', 'gold')}${kpi('🧾 Other deductions', '$' + Math.round(tot('deductUsd')).toLocaleString('en-IN'), 'slop chest, phone, etc.', 'red')}${kpi('🏦 Sent home', '$' + Math.round(tot('remitUsd')).toLocaleString('en-IN'), rs(tot('remitInr')) + ' credited', 'acc')}</div>
-  <div class="card mt" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Month</th><th>Vessel</th><th class="ra">Earned $</th><th class="ra">Cash onboard $</th><th class="ra">Deductions $</th><th class="ra">Sent home $</th><th class="ra">Credited ₹</th><th class="ra">Rate</th></tr></thead><tbody>${L.map(s => { const m = slipMatch(s), inr = m ? m.amount : s.remitInr; return `<tr class="clk" data-act="slipEdit" data-id="${s.id}"><td>${ymLabel(s.month)}</td><td>${esc(s.vessel || '')}</td><td class="ra num">${(+s.earnedUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${(+s.cashUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${(+s.deductUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${(+s.remitUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${inr ? rs(inr) + (m ? ' ✓' : '') : '—'}</td><td class="ra num">${inr && s.remitUsd ? '₹' + (inr / s.remitUsd).toFixed(2) : '—'}</td></tr>`; }).join('')}</tbody></table></div></div>`
-  : `<div class="card"><div class="small muted">Add each month’s payslip — earned (USD), cash taken onboard, other deductions and the amount sent home — to see where your salary goes. When you share one V Ships payslip PDF, uploads here will be read automatically.</div></div>`}`;
+  const L = slips(), M = slipMatches();
+  const head = `<div class="sec">🧾 Payslips<span class="sp"></span><button class="btn sm" data-act="slipEdit">＋ Add by hand</button><label class="btn sm pri" style="cursor:pointer;text-transform:none;letter-spacing:0">⬆ Upload payslips (PDF)<input type="file" id="slip_file" multiple accept=".pdf" style="display:none"></label></div>`;
+  if (!L.length) return head + `<div class="card"><div class="small muted">Upload your V Ships wage accounts (PDF, many at once — one file can hold several months). Each month’s earnings, allotments, cash advance and other deductions are read, matched to the salary credits in your Kotak NRE / NRO, and shown below.</div></div>`;
+  const bar = (parts, tot) => `<div class="sbar">${parts.filter(p => p[1] > 0).map(([l, v, c]) => `<i style="width:${v / tot * 100}%;background:${c}" title="${esc(l)} ${usd(v)}"></i>`).join('')}</div><div class="flex small" style="flex-wrap:wrap;gap:10px;margin-top:6px">${parts.filter(p => p[1] > 0).map(([l, v, c]) => `<span><b style="color:${c}">●</b> ${esc(l)} <b>${usd(v)}</b> (${Math.round(v / tot * 100)}%)</span>`).join('')}</div>`;
+  const cards = slipContracts(L).map(l => {
+    const f = l[0], last = l[l.length - 1], S2 = k => l.reduce((a, x) => a + (+x[k] || 0), 0);
+    const earned = S2('earnedUsd'), home = S2('remitUsd'), cash = S2('cashUsd'), oth = S2('deductUsd'), due = last.balEnd || 0;
+    const inr = l.reduce((a, x) => a + (M[x.id] ? M[x.id].inr : 0), 0), homeM = l.filter(x => M[x.id]).reduce((a, x) => a + (+x.remitUsd || 0), 0);
+    const comp = {}; l.forEach(x => (x.earnings || []).forEach(e => comp[e.name] = (comp[e.name] || 0) + e.amt));
+    const days = l.reduce((a, x) => a + (+x.days || 0), 0), sOff = last.balEnd === 0 ? last.to : null;
+    const gaps = []; for (let i = 1; i < l.length; i++) { let m = nextYm(l[i - 1].month); while (m < l[i].month) { gaps.push(m); m = nextYm(m); } }
+    return `<div class="card mt"><h3>🚢 ${esc(f.vessel || 'Vessel')} <small>${esc(f.rank || '')}</small><span class="sp"></span><span class="small muted">${f.signOn ? 'Sign on ' + fmtDate(f.signOn) : ymLabel(f.month)}${sOff ? ' → off ' + fmtDate(sOff) : ' → ' + ymLabel(last.month)}${days ? ' · ~' + days + ' days' : ''}</span></h3>
+      <div class="grid g4" style="gap:10px">${kpi('💵 Earned', usd(earned), l.length + ' payslips', 'grn')}${kpi('🏦 Sent home', usd(home), inr ? rs(inr) + ' credited' + (homeM ? ' · ₹' + (inr / homeM).toFixed(2) + '/$' : '') : 'allotments + final wages', 'acc')}${kpi('💸 Cash onboard', usd(cash), earned ? Math.round(cash / earned * 100) + '% of earnings' : '', 'gold')}${kpi('🧾 Other deductions', usd(oth), due ? usd(due) + ' still due' : 'balance settled ✓', due ? 'red' : 'vio')}</div>
+      <div class="mt">${bar([['Sent home', home, '#3b82f6'], ['Cash onboard', cash, '#f59e0b'], ['Other deductions', oth, '#ef4444'], ['Still due', Math.max(0, due), '#94a3b8']], Math.max(earned, home + cash + oth + Math.max(0, due)) || 1)}</div>
+      ${gaps.length ? `<div class="alert red mt">⚠️ <div>Payslip missing for <b>${gaps.map(ymLabel).join(', ')}</b> — upload it to complete this contract.</div></div>` : ''}
+      ${Object.keys(comp).length ? `<details class="mt"><summary class="small b" style="cursor:pointer">Earnings breakdown</summary><div class="tblw mt"><table class="t"><tbody>${Object.entries(comp).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<tr><td>${esc(n)}</td><td class="ra num">${usd(v)}</td><td class="ra small muted">${Math.round(v / (earned || 1) * 100)}%</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="ra num b">${usd(earned)}</td><td></td></tr></tbody></table></div></details>` : ''}</div>`;
+  }).join('');
+  const rows = L.map(s => { const m = M[s.id]; return `<tr class="clk" data-act="slipEdit" data-id="${s.id}"><td>${ymLabel(s.month)}</td><td class="small">${esc(s.vessel || '')}</td><td class="ra">${s.days || ''}</td><td class="ra num">${usd(s.earnedUsd)}</td><td class="ra num">${s.cashUsd ? usd(s.cashUsd) : '—'}</td><td class="ra num">${s.deductUsd ? usd(s.deductUsd) : '—'}</td><td class="ra num">${s.remitUsd ? usd(s.remitUsd) : '—'}</td><td class="ra num">${m ? rs(m.inr) + (m.t ? ' <span class="cr" title="' + esc(fmtDate(m.t.date) + ' · ' + accName('me', m.t.account)) + '">✓</span>' : '') : s.remitUsd ? '<span class="muted small">not found</span>' : '—'}</td><td class="ra num">${m && s.remitUsd ? '₹' + (m.inr / s.remitUsd).toFixed(2) : '—'}</td><td class="ra num">${s.balEnd != null && s.balEnd !== '' ? usd(s.balEnd) : ''}</td></tr>`; }).join('');
+  return head + cards + `<div class="card mt" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Month</th><th>Vessel</th><th class="ra">Days</th><th class="ra">Earned</th><th class="ra">Cash onboard</th><th class="ra">Other ded.</th><th class="ra">Sent home</th><th class="ra">Bank credit</th><th class="ra">Rate</th><th class="ra">Balance</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="small muted" style="padding:6px">Sent home = allotments + final balance of wages. ✓ = matched to the salary credit in your bank statement. Tap a month for full details, or to set the ₹ credit yourself.</div></div>`;
 }
 function slipModal(id) {
   const L = P('me').payslips = P('me').payslips || []; const s = L.find(x => x.id === id) || { month: ym(today()), vessel: '', earnedUsd: '', cashUsd: '', deductUsd: '', remitUsd: '', remitInr: '', note: '' };
   const f = (k, l, ty = 'number') => `<div class="fld"><label>${l}</label><input class="inp" data-sf="${k}" type="${ty}" value="${esc(s[k] ?? '')}"></div>`;
-  modal(id ? 'Edit payslip' : 'Add payslip', `<div class="frow">${f('month', 'Month', 'month')}${f('vessel', 'Vessel', 'text')}</div><div class="frow mt">${f('earnedUsd', 'Total earned (USD)')}${f('cashUsd', 'Cash advance onboard (USD)')}</div><div class="frow mt">${f('deductUsd', 'Other deductions (USD)')}${f('remitUsd', 'Remitted home (USD)')}</div><div class="frow mt">${f('remitInr', 'Credited in bank (₹, optional)')}${f('note', 'Note', 'text')}</div>`,
-    `${id ? '<button class="btn dan" id="sl_del">Delete</button><span style="flex:1"></span>' : ''}<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="sl_save">Save</button>`, { onMount: m => {
+  const KIND = { home: 'sent home', final: 'final wages', cash: 'cash', other: 'other' };
+  const detail = s.src === 'pdf' ? `<div class="grid g2" style="gap:10px"><div><div class="small b">Earnings</div><table class="t"><tbody>${(s.earnings || []).map(e => `<tr><td>${esc(e.name)}</td><td class="ra num">${usd(e.amt)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="ra num b">${usd(s.earnedUsd)}</td></tr></tbody></table></div>
+    <div><div class="small b">Deductions</div><table class="t"><tbody>${(s.deductions || []).map(e => `<tr><td>${esc(e.name)} <span class="pill">${KIND[e.kind] || ''}</span></td><td class="ra num">${usd(e.amt)}</td></tr>`).join('') || '<tr><td class="muted">None</td></tr>'}</tbody></table>
+    <div class="small muted mt">Balance b/f ${usd(s.balBF)} · end of month ${usd(s.balEnd)} · ${s.days || '?'} days${s.from ? ' (' + fmtDateShort(s.from) + ' – ' + fmtDateShort(s.to) + ')' : ''}${s.rank ? ' · ' + esc(s.rank) : ''}</div></div></div><div class="frow mt">${f('remitInr', 'Bank credit ₹ (leave empty to match automatically)')}${f('note', 'Note', 'text')}</div>`
+    : `<div class="frow">${f('month', 'Month', 'month')}${f('vessel', 'Vessel', 'text')}</div><div class="frow mt">${f('earnedUsd', 'Total earned (USD)')}${f('cashUsd', 'Cash advance onboard (USD)')}</div><div class="frow mt">${f('deductUsd', 'Other deductions (USD)')}${f('remitUsd', 'Sent home (USD)')}</div><div class="frow mt">${f('remitInr', 'Credited in bank (₹, optional)')}${f('note', 'Note', 'text')}</div>`;
+  modal(id ? `Payslip · ${ymLabel(s.month)}${s.vessel ? ' · ' + esc(s.vessel) : ''}` : 'Add payslip', detail,
+    `${id ? '<button class="btn dan" id="sl_del">Delete</button><span style="flex:1"></span>' : ''}<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="sl_save">Save</button>`, { wide: s.src === 'pdf', onMount: m => {
       $('#sl_save', m).onclick = () => { const o = id ? s : { id: uid() }; $$('[data-sf]', m).forEach(i => o[i.dataset.sf] = i.type === 'number' ? (i.value === '' ? '' : +i.value) : i.value.trim()); if (!o.month) { toast('Pick the month'); return; } touch(o); if (!id) L.push(o); save(); closeModal(); rerender(); };
       if (id) $('#sl_del', m).onclick = () => { removeRec(L, id); save(); closeModal(); rerender(); };
     } });
 }
-document.addEventListener('change', e => { if (e.target.id === 'slip_file' && e.target.files.length) { const n = e.target.files.length; e.target.value = ''; modal('Payslips', `<div class="alert acc">🧾 <div>${n} file${n > 1 ? 's' : ''} picked. The app can’t read V Ships payslips yet — share one payslip with Claude so its layout can be added, then upload them all here and they’ll be read in one go. Until then, use <b>＋ Add payslip</b> to enter the totals by hand.</div></div>`, '<button class="btn pri" data-act="closeModal">OK</button>'); } });
+const slipId = s => 'ps_' + s.month + '_' + compact(s.vessel || 'x').toLowerCase().replace(/[^a-z0-9]/g, '');
+async function slipUpload(files) {
+  const found = [], errs = [], warns = [];
+  for (const f of files) {
+    try { const pages = await StmtParser.readPdf(window.pdfjsLib, new Uint8Array(await f.arrayBuffer()));
+      const r = PayslipParser.parsePayslips(pages); if (!r || !r.slips.length) { errs.push(f.name + ': not a V Ships wage account'); continue; }
+      r.slips.forEach(s => found.push(Object.assign(s, { file: f.name }))); warns.push(...r.warnings);
+    } catch (e) { errs.push(f.name + ': ' + (/password/i.test(String(e)) ? 'password-protected' : 'could not be read')); }
+  }
+  const L = P('me').payslips = P('me').payslips || [];
+  const uniq = {}; found.forEach(s => uniq[slipId(s)] = s); const list = Object.values(uniq).sort((a, b) => a.month.localeCompare(b.month));
+  const isNew = s => !L.some(x => x.id === slipId(s) && !x.deleted);
+  modal('Payslips read', `${errs.length ? `<div class="alert red">⚠️ <div>${errs.map(esc).join('<br>')}</div></div>` : ''}${warns.length ? `<div class="alert amb mt">🟡 <div>${warns.map(esc).join('<br>')}</div></div>` : ''}
+    ${list.length ? `<div class="tblw mt"><table class="t"><thead><tr><th>Month</th><th>Vessel</th><th class="ra">Earned</th><th class="ra">Cash</th><th class="ra">Other</th><th class="ra">Sent home</th><th></th></tr></thead><tbody>${list.map(s => `<tr><td>${ymLabel(s.month)}</td><td>${esc(s.vessel)}</td><td class="ra num">${usd(s.earnedUsd)}</td><td class="ra num">${usd(s.cashUsd)}</td><td class="ra num">${usd(s.deductUsd)}</td><td class="ra num">${usd(s.remitUsd)}</td><td class="small ${isNew(s) ? 'cr' : 'muted'}">${isNew(s) ? 'new' : 'update'}</td></tr>`).join('')}</tbody></table></div><div class="small muted mt">Read on this device only. Saving the same month again just updates it.</div>` : ''}`,
+    `<button class="btn" data-act="closeModal">Cancel</button>${list.length ? `<button class="btn pri" id="sl_imp">Save ${list.length} payslip${list.length > 1 ? 's' : ''}</button>` : ''}`, { wide: true, onMount: m => { const b = $('#sl_imp', m); if (b) b.onclick = () => {
+      list.forEach(s => { const id = slipId(s), ex = L.find(x => x.id === id); const rec = { id, src: 'pdf', month: s.month, vessel: s.vessel, rank: s.rank, signOn: s.signOn, from: s.from, to: s.to, days: s.days, earnedUsd: s.earnedUsd, cashUsd: s.cashUsd, deductUsd: s.deductUsd, remitUsd: s.remitUsd, allotUsd: s.allotUsd, finalUsd: s.finalUsd, balBF: s.balBF, balEnd: s.balEnd, earnings: s.earnings, deductions: s.deductions, file: s.file };
+        if (ex) { const keep = { remitInr: ex.remitInr, note: ex.note }; Object.keys(ex).forEach(k => { if (k !== 'id') delete ex[k]; }); Object.assign(ex, rec, keep); touch(ex); } else L.push(touch(rec)); });
+      save(); closeModal(); rerender(); toast(list.length + ' payslips saved'); }; } });
+}
+document.addEventListener('change', e => { if (e.target.id === 'slip_file' && e.target.files.length) { const fl = [...e.target.files]; e.target.value = ''; toast('Reading ' + fl.length + ' file' + (fl.length > 1 ? 's' : '') + '…'); slipUpload(fl); } });
+// a payslip picked in the bank-statement upload → point to the right place
+const _readItemPs = readItem;
+readItem = async function (it, pw) {
+  if (/\.pdf$/i.test(it.file) && window.PayslipParser) { try { const pages = await StmtParser.readPdf(window.pdfjsLib, new Uint8Array(await it.f.arrayBuffer()), pw || undefined); if (PayslipParser.parsePayslips(pages)) { Object.assign(it, { err: 'This is a payslip — upload it in Me → Income → ⬆ Upload payslips.', include: false, needPw: false }); return; } } catch (e) { } }
+  return _readItemPs(it, pw);
+};
 
 /* ---------------- 👩 To ABB ---------------- */
 function abbTab() {
