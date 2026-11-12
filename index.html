@@ -886,7 +886,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.13';
+const APP_VER = '3.14';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -959,7 +959,7 @@ const CATS = [
   ['tradingpay', 'Trading payout', '💹', 'inc', 'income'], ['ytincome', 'YouTube / Tradetron income', '▶️', 'inc', 'income'], ['family', 'Received from family', '👪', 'inc', 'income'], ['otherinc', 'Other income', '➕', 'inc', 'income'],
   // 🔄 Transfers (excluded from spend/income)
   ['self', 'Self-transfer', '🔄', 'xfer', 'xfer'], ['friend', 'Friends (lend/borrow)', '🤝', 'xfer', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer', 'xfer'],
-  ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Son → Dad (repaid / given)', '👨', 'xfer', 'xfer'], ['toson', 'Dad → son (taken)', '👦', 'xfer', 'xfer'],
+  ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Son → Dad (repaid / given)', '👨', 'xfer', 'xfer'], ['toson', 'Dad → son (taken)', '👦', 'xfer', 'xfer'], ['cardpay', 'Card bill (card spends counted)', '💳', 'xfer', 'xfer'],
 ];
 const CAT = Object.fromEntries(CATS.map(([id, name, icon, type, group]) => [id, { id, name, icon, type, group }]));
 const GRP = Object.fromEntries(GROUPS.map(([id, name, icon, type]) => [id, { id, name, icon, type }]));
@@ -1106,7 +1106,7 @@ function seedState() {
     },
     profiles: { me: EMPTY_PROFILE('Ritesh'), wife: EMPTY_PROFILE('ABB'), parents: EMPTY_PROFILE('Parents') },
   };
-  curP = 'me'; s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('HDFC', 'Savings', 'HDFC Savings'), acc('Cash', 'Cash', 'Cash wallet')];
+  curP = 'me'; s.profiles.me.accounts = [acc('Kotak', 'NRO', 'Kotak NRO'), acc('Kotak', 'NRE', 'Kotak NRE'), acc('SBI', 'NRE', 'SBI NRE'), acc('SBI', 'NRO', 'SBI NRO'), acc('PNB', 'Savings', 'PNB Savings'), acc('HDFC', 'Savings', 'HDFC Savings'), acc('ICICI', 'Credit card', 'Amazon Pay ICICI Card'), acc('Cash', 'Cash', 'Cash wallet')];
   curP = 'parents'; s.profiles.parents.accounts = [acc('PNB', 'Savings', 'Dad PNB (pension)')];
   s.profiles.parents.members = [{ id: 'seed_parents_dad', role: 'dad', name: 'Dad', phones: [], notes: '', updatedAt: T0 }, { id: 'seed_parents_mom', role: 'mom', name: 'Mom', phones: [], notes: '', updatedAt: T0 }];
   curP = 'wife'; s.profiles.wife.accounts = [acc('SBI', 'Savings', 'ABB SBI'), acc('Axis', 'Savings', 'ABB Axis', { status: 'closed' }), acc('Cash', 'Cash', 'ABB cash')];
@@ -1190,6 +1190,12 @@ function migrate() { const d = seedState(); S.settings = Object.assign(d.setting
   if (!S.settings.hdfcV) { S.settings.hdfcV = 1;
     if (!(S.profiles.me.accounts || []).some(a => a.id === 'seed_me_hdfc_savings') && !live(S.profiles.me.accounts || []).some(a => /HDFC/i.test(a.bank + ' ' + a.name))) S.profiles.me.accounts.push(touch({ id: 'seed_me_hdfc_savings', bank: 'HDFC', type: 'Savings', name: 'HDFC Savings', last4: '', status: 'active' }));
   }
+  if (!S.settings.cardV1) { S.settings.cardV1 = 1;
+    if (!(S.profiles.me.accounts || []).some(a => a.id === ICICI_CARD_ID)) S.profiles.me.accounts.push(touch({ id: ICICI_CARD_ID, bank: 'ICICI', type: 'Credit card', name: 'Amazon Pay ICICI Card', last4: '', status: 'active' }));
+    live(S.profiles.me.txns || []).forEach(t => { if (t.userSet) return; const r = classify(t, 'me');
+      if (r.cat === 'ccbill' && r.cardId && (t.cat !== 'ccbill' || t.cardId !== r.cardId)) { t.cat = 'ccbill'; t.cardId = r.cardId; t.conf = 'h'; touch(t); }
+      else if (r.app === 'Amazon Pay' && !t.app && t.mode === 'UPI' && t.dir === 'dr') { t.app = 'Amazon Pay'; t.appConf = 'h'; touch(t); } });
+  }
   if (!S.settings.abbV) { S.settings.abbV = 1;
     if (!S.settings.wifeName || /^ankita/i.test(S.settings.wifeName)) S.settings.wifeName = 'ABB';
     const w = S.profiles.wife; if (/^ankita/i.test(w.name || '')) w.name = 'ABB';
@@ -1231,6 +1237,7 @@ function sonOf(profKey, t, c) {
 }
 // people you pay so they hand Dad the cash (e.g. Khem Chand) — counted as money you gave Dad
 function dadViaOf(c) { const w = String((S.settings && S.settings.dadVia) || '').split(',').map(x => x.trim()).filter(x => compact(x).length >= 4).find(x => c.includes(compact(x))); return w ? w.toLowerCase().replace(/\b\w/g, x => x.toUpperCase()) : null; }
+const ICICI_CARD_ID = 'seed_me_amazon_pay_icici_card', ICICI_CARD_RE = /^UPI\/CREDIT\/ICIC|AMAZONICICI|AMAZONPAYICICI|ICICICREDITCARD|ICICIBANKCREDITCARD|ICICICARD/;
 function classify(t, profKey) {
   const prof = P(profKey), st = S.settings;
   const c = compact(t.desc), out = { cat: 'other', conf: 'l', app: null, appConf: null, flags: [] };
@@ -1247,6 +1254,7 @@ function classify(t, profKey) {
   else if ((isSelf || selfUpi) && profKey === 'me') { out.cat = 'self'; out.conf = 'h'; }
   else if (profKey === 'me' && listOf(st.wifeMatch).some(w => c.includes(w))) { out.cat = 'wife'; out.conf = 'h'; }
   else if (profKey === 'me' && t.dir === 'dr' && dadViaOf(c)) { out.cat = 'todad'; out.conf = 'h'; out.person = 'ritesh'; out.via = dadViaOf(c); out.for = 'parents'; }
+  else if (profKey === 'me' && t.dir === 'dr' && ICICI_CARD_RE.test(c)) { out.cat = 'ccbill'; out.conf = 'h'; out.cardId = ICICI_CARD_ID; }
   else if (profKey === 'me' && t.dir === 'dr' && listOf(st.parentsMatch).some(w => w.length >= 4 && c.includes(w))) { out.cat = 'parents'; out.conf = 'h'; out.for = 'parents'; }
   else if (profKey === 'wife' && t.dir === 'cr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'fromhusband'; out.conf = 'h'; }
   else if (profKey === 'wife' && t.dir === 'dr' && listOf(st.husbandMatch).some(w => c.includes(w))) { out.cat = 'tohusband'; out.conf = 'h'; }
@@ -1274,6 +1282,7 @@ function classify(t, profKey) {
     else if (/PAYMENTFRO$/.test(c)) { out.app = 'PhonePe'; out.appConf = 'm'; }
     else if (/PAYMENTFROM$/.test(c)) { out.app = 'PhonePe'; out.appConf = 'm'; }
     else if (/YOUAREPAY/.test(c)) { out.app = 'Amazon Pay'; out.appConf = 'h'; }
+    else if (/@[YR]?APL\b|@[YR]?APL\/|AMAZONPAY|AMAZONUPI/.test(c) && !ICICI_CARD_RE.test(c)) { out.app = 'Amazon Pay'; out.appConf = 'h'; }
     else if (/PAYTM/.test(c)) { out.app = 'Paytm'; out.appConf = 'm'; }
     else if (prof.payeeApp[pk]) { out.app = prof.payeeApp[pk]; out.appConf = 'm'; }
     else if (/RAZORPA|UPIINTENT|MANDATE|RECURRING|OIDMMM|\/OID|PAYVIA|\/COLLECT|REQPAY|PAYMENTTO|PAYMENTFOR|PREPAIDRECH|DEBITMONEY|PRIMERE$|PAYMENTBYR$|SECU$|\/UPI$|BOOKMYSHOW$|^UPI\/[^/]+\/[^/]+\/(?=[A-Z]*\d)[A-Z0-9]{6,}$/.test(c)) { out.app = 'Merchant / autopay'; out.appConf = 'h'; }
@@ -1755,7 +1764,7 @@ VIEWS.dashboard = () => {
   </div>`;
 };
 function accountsSummary(profKey) {
-  const accs = P(profKey).accounts.filter(a => !a.deleted && a.status !== 'closed' && a.type !== 'UPI app');
+  const accs = P(profKey).accounts.filter(a => !a.deleted && a.status !== 'closed' && a.type !== 'UPI app' && a.type !== 'Credit card');
   let nre = 0, nro = 0, oth = 0;
   const rows = accs.map(a => { const b = accountBalance(profKey, a.id); if (b) { if (a.type === 'NRE') nre += b.bal; else if (a.type === 'NRO') nro += b.bal; else oth += b.bal; } return `<div class="row"><div class="ico">${a.type === 'Cash' ? '💵' : '🏦'}</div><div class="mid"><div class="t1">${esc(a.name)}${a.last4 ? ` <span class="muted small">··${esc(a.last4)}</span>` : ''}</div><div class="t2">${b ? 'as of ' + fmtDate(b.date) + (b.src === 'manual' ? ' (manual)' : '') : 'No statement yet'}</div></div><div class="r num b">${b ? rs(b.bal) : '—'}</div></div>`; }).join('');
   const split = profKey === 'me' && (nre || nro) ? `<div class="flex small mt" style="margin-bottom:6px"><span class="pill acc">NRE ${rsShort(nre)}</span><span class="pill">NRO ${rsShort(nro)}</span>${oth ? `<span class="pill">Other ${rsShort(oth)}</span>` : ''}<span class="sp"></span><b class="num">${rs(nre + nro + oth)}</b></div>` : '';
@@ -2030,7 +2039,7 @@ function importRows(I, link) {
   I.rows.filter(r => !r.sel && r.dup === 'sure' && r.matchId).forEach(r => { const o = prof.txns.find(x => x.id === r.matchId);
     if (o && !o.deleted && o.source === 'import' && !o.reviewed && compact(o.desc) !== compact(r.desc)) { Object.assign(o, { desc: r.desc, ref: r.ref || o.ref, payee: r.payee, mode: r.mode, remark: r.remark, cat: r.cat, conf: r.conf, app: r.app, appConf: r.appConf }); touch(o); repaired++; } });
   I.rows.filter(r => r.sel).forEach(r => {
-    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', person: r.person, via: r.via || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
+    const t = touch({ id: uid(), date: r.date, amount: r.amount, dir: r.dir, desc: r.desc, ref: r.ref, balance: r.balance, account: I.accId, seq: r.seq, mode: r.mode, payee: r.payee, remark: r.remark, cat: r.cat, conf: r.conf, for: r.for || '', loanId: r.loanId || '', person: r.person, cardId: r.cardId || '', via: r.via || '', app: r.app, appConf: r.appConf, friendId: r.friendId, gross: r.gross, tax: r.tax, source: 'import', batch, reviewed: !!r.userSet });
     if (t.remark && /HOME\s*EXPE|HOME\s*RENT/i.test(t.remark)) t.note = /RENT/i.test(t.remark) ? 'Home rent' : 'Home expense';
     if (r.dup && r.action === 'replace' && r.matchId) { mergeInto(I.profKey, t, r.matchId); merged++; }
     if (r.dup && r.action === 'keep' && r.matchId) { const o = prof.txns.find(x => x.id === r.matchId); if (o) { o.notDup = [...(o.notDup || []), t.id]; touch(o); } t.notDup = [r.matchId]; }
@@ -3718,7 +3727,7 @@ function reclassify(k) {
   let n = 0;
   live(P(k).txns).filter(t => !t.reviewed && t.source === 'import' && !t.billId).forEach(t => {
     const c = classify(t, k); if (t.cat === 'friend' && t.friendId) return;
-    if (c.cat !== t.cat || c.app !== t.app || (c.for && c.for !== t.for) || (c.person && c.person !== t.person)) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); if (c.for) t.for = c.for; if (c.person) t.person = c.person; if (c.via) t.via = c.via; if (c.loanId) t.loanId = c.loanId; touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
+    if (c.cat !== t.cat || c.app !== t.app || (c.for && c.for !== t.for) || (c.person && c.person !== t.person)) { Object.assign(t, { cat: c.cat, conf: c.conf, app: c.app, appConf: c.appConf, friendId: c.friendId || t.friendId }); if (c.for) t.for = c.for; if (c.person) t.person = c.person; if (c.via) t.via = c.via; if (c.cardId) t.cardId = c.cardId; if (c.loanId) t.loanId = c.loanId; touch(t); n++; if (c.cat === 'friend' && c.friendId) { const f = P(k).friends.find(x => x.id === c.friendId); if (f) addFriendEntryFromTxn(f, t); } }
   });
   save(); rerender(); return n;
 }
@@ -4382,7 +4391,7 @@ VIEWS.stmts = () => {
     const cells = years.map(y => { const r = fyStatus(k, a, y, cov); if (r.st === 'ok' || r.st === 'cur') cnt.ok++; else if (r.st === 'part') { cnt.part++; todo.push([a, y, r]); } else if (r.st === 'miss' || r.st === 'curmiss') { cnt.miss++; todo.push([a, y, r]); }
       if (r.st === 'na') return `<td class="stc na">·</td>`;
       const [ic, cl, lab] = ST_ICON[r.st];
-      const sub = r.st === 'part' ? gapText(r.gaps) + ' missing' : r.st === 'cur' ? 'up to ' + mLab(r.upTo) : r.st === 'ok' ? r.n + ' entries' : 'tap to upload';
+      const sub = r.st === 'part' ? gapText(r.gaps) + ' missing' : r.st === 'cur' ? 'up to ' + mLab(r.upTo) : r.st === 'ok' ? (r.label || r.n + ' entries') : 'tap to upload';
       return `<td class="stc ${cl}" data-act="stCell" data-acc="${a.id}" data-y="${y}" data-prof="${k}" title="${esc(lab + ' · ' + sub)}"><b>${ic}</b><small>${esc(sub)}</small></td>`; }).join('');
     return `<tr><th class="sta"><div class="b">${esc(a.name)}${a.last4 ? ' <span class="muted small">··' + esc(a.last4) + '</span>' : ''}</div><label class="small muted">from <select class="inp sm" data-stfrom="${a.id}" data-prof="${k}">${years.map(y => `<option value="${y}" ${+(a.stmtFrom || ST_START()) === y ? 'selected' : ''}>${fyLab(y)}</option>`).join('')}</select></label></th>${cells}</tr>`;
   }).join('');
@@ -4862,6 +4871,110 @@ Object.assign(ACT, {
 NAV.splice(NAV.findIndex(n => n[0] === 'stmts') + 1, 0, ['upi', 'UPI apps', '📱']);
 TITLES.upi = 'UPI apps';
 MORE_TILES.splice(5, 0, ['upi', '📱', 'UPI apps', '#8b5cf6']);
+
+/* ---------- Statements tab: UPI apps & credit cards are optional — only show what was uploaded ---------- */
+const isOptAcc = a => a && (a.type === 'UPI app' || a.type === 'Credit card');
+const _fyStatus = fyStatus;
+fyStatus = function (k, acc, y, cov) {
+  if (!isOptAcc(acc)) return _fyStatus(k, acc, y, cov);
+  const [fs, fe] = fyRange(y);
+  if (!(acc.stmts || []).some(s => s.to >= fs && s.from <= fe)) return { st: 'na' };
+  if (acc.type === 'UPI app') {
+    const x = live(P(k).txns).filter(t => t.app === acc.bank && t.date >= fs && t.date <= fe && (t.source === 'upi' || t.upiFile));
+    const only = x.filter(t => t.source === 'upi').length, inb = x.length - only;
+    return { st: 'ok', n: x.length, label: !x.length ? 'uploaded' : only ? `${inb} in bank · ${only} from app` : `${x.length} payments · all in bank ✓` };
+  }
+  const n = live(P(k).txns).filter(t => t.account === acc.id && t.date >= fs && t.date <= fe).length;
+  return { st: 'ok', n, label: n + ' entries' };
+};
+
+/* ---------- credit cards: bill payments vs card spends (no double counting) ---------- */
+// before that card's statement is uploaded, the bill payment is the spending (Credit card bill);
+// for months covered by an uploaded card statement the card's own entries count, so the bill becomes a transfer
+function cardRecalc(k = 'me') {
+  let n = 0; const accs = P(k).accounts.filter(a => !a.deleted && a.type === 'Credit card');
+  live(P(k).txns).filter(t => t.cardId && ['ccbill', 'cardpay'].includes(t.cat)).forEach(t => {
+    const a = accs.find(x => x.id === t.cardId); if (!a) return;
+    // a bill pays the previous cycle → look back ~45 days for card statement coverage
+    const cov = (a.stmts || []).some(s => addDays(t.date, -45) <= s.to && t.date >= s.from);
+    const want = cov ? 'cardpay' : 'ccbill'; if (t.cat !== want) { t.cat = want; touch(t); n++; }
+  });
+  return n;
+}
+const _batchGoCard = ACT.batchGo;
+ACT.batchGo = el => { _batchGoCard(el); try { if (PROFS.some(k => cardRecalc(k))) { save(); rerender(); } } catch (e) { console.warn(e); } };
+function cardsSection(k) {
+  const cards = P(k).accounts.filter(a => !a.deleted && a.type === 'Credit card'); if (!cards.length) return '';
+  const fy = fyRange(fyNum(today()));
+  return `<div class="sec">💳 Credit cards</div><div class="grid g2">${cards.map(a => {
+    const b = live(P(k).txns).filter(t => t.cardId === a.id && t.dir === 'dr'), last = b.slice().sort((p, q) => q.date.localeCompare(p.date))[0];
+    const spends = live(P(k).txns).filter(t => t.account === a.id && t.dir === 'dr' && t.source === 'import');
+    return `<div class="card sonc upic ${VIEW.sub.upiSel === 'card:' + a.id ? 'on' : ''}" data-act="upiSel" data-a="card:${a.id}" style="cursor:pointer"><span class="itile big" style="--ic:#f59e0b">💳</span><div class="mid"><div class="t1">${esc(a.name)}${a.last4 ? ' <span class="muted small">··' + esc(a.last4) + '</span>' : ''}</div>
+      <div class="sonrow"><span>Bills paid <b class="dr num">${rs(b.reduce((s, t) => s + t.amount, 0))}</b></span><span>This FY <b class="num">${rs(b.filter(t => t.date >= fy[0] && t.date <= fy[1]).reduce((s, t) => s + t.amount, 0))}</b></span></div>
+      <div class="t2">${b.length} bill payment${b.length === 1 ? '' : 's'}${last ? ' · last ' + rs(last.amount) + ' on ' + fmtDate(last.date) : ''}</div>
+      <div class="t2">${spends.length ? spends.length + ' card purchases from statements' : 'Card statement not uploaded yet — bill payments count as spending'}</div></div></div>`; }).join('')}</div>`;
+}
+function cardList(k, id) {
+  const a = P(k).accounts.find(x => x.id === id); if (!a) return '';
+  const b = live(P(k).txns).filter(t => t.cardId === id && t.dir === 'dr').sort((p, q) => q.date.localeCompare(p.date));
+  const fy = {}; b.forEach(t => { const y = fyOf(t.date); fy[y] = fy[y] || { n: 0, v: 0 }; fy[y].n++; fy[y].v += t.amount; });
+  return `<div class="sec">${esc(a.name)} — bill payments<span class="sp"></span><button class="btn sm ghost" data-act="upiSel" data-a="">Close</button></div>
+  ${Object.keys(fy).length ? `<div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Financial year</th><th class="ra">Payments</th><th class="ra">Paid to card</th></tr></thead><tbody>${Object.entries(fy).sort((p, q) => q[0].localeCompare(p[0])).map(([y, v]) => `<tr><td>${esc(y)}</td><td class="ra">${v.n}</td><td class="ra num b">${rs(v.v)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+  <div class="card mt" style="padding:4px 14px">${b.length ? b.map(t => txRow(t, k)).join('') : emptyBox('💳', 'No bill payments found yet', 'Payments like “UPI/credit/ICIC/…/Amazon icici” from your bank statements show up here.', '')}</div>`;
+}
+const _upiView = VIEWS.upi;
+VIEWS.upi = () => {
+  const k = VIEW.sub.upiProf || 'me'; try { if (cardRecalc(k)) save(); } catch (e) { }
+  const sel = VIEW.sub.upiSel || '';
+  if (sel.startsWith('card:')) { VIEW.sub.upiSel = null; const h = _upiView(); VIEW.sub.upiSel = sel; return h + cardsSection(k) + cardList(k, sel.slice(5)); }
+  const h = _upiView(), i = h.lastIndexOf('<div class="sec">');
+  // cards go between the app tiles and the open list
+  return sel && i > 0 ? h.slice(0, i) + cardsSection(k) + h.slice(i) : h + cardsSection(k);
+};
+
+/* ============ Mom & Dad → Car loan: EMIs found in Dad's statement, with or without loan details ============ */
+function carEmis() {
+  const ids = live(P('parents').loans || []).filter(l => /car/i.test(l.name || '')).map(l => l.id);
+  return live(P('parents').txns).filter(t => t.dir === 'dr' && (t.cat === 'carloan' || (t.loanId && ids.includes(t.loanId)))).sort((a, b) => a.date.localeCompare(b.date));
+}
+const modeOfArr = arr => { const m = {}; arr.forEach(v => m[v] = (m[v] || 0) + 1); return Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0]; };
+function carStats() {
+  const tx = carEmis(); if (!tx.length) return null;
+  const total = tx.reduce((s, t) => s + t.amount, 0), emi = +modeOfArr(tx.map(t => t.amount)), day = +modeOfArr(tx.map(t => +t.date.slice(8)));
+  const fy0 = fyRange(fyNum(today())), thisFy = tx.filter(t => t.date >= fy0[0] && t.date <= fy0[1]);
+  // months with no EMI between the first EMI and the latest date Dad's statements cover
+  const latest = live(P('parents').txns).filter(t => t.source === 'import').map(t => t.date).sort().pop() || today();
+  const have = new Set(tx.map(t => t.date.slice(0, 7))), miss = [];
+  for (let m = tx[0].date.slice(0, 7); m <= latest.slice(0, 7); m = addDays(m + '-28', 5).slice(0, 7)) { const due = m + '-' + String(Math.min(day, 28)).padStart(2, '0'); if (due > latest) break; if (!have.has(m)) miss.push(m); }
+  return { tx, total, emi, day, thisFy, first: tx[0], last: tx[tx.length - 1], miss };
+}
+const ymText = m => MSHORT[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4);
+function carAutoHtml(withHead) {
+  const c = carStats();
+  if (!c) return withHead ? `<div class="card">${emptyBox('🚗', 'No car-loan EMIs found yet', 'Import Dad’s PNB statement — debits like “ACH/RASECC THANE/…” are picked up automatically.', `<button class="btn pri sm" data-act="loanEdit">＋ Add loan details</button>`)}</div>` : '';
+  const fy = {}; c.tx.forEach(t => { const y = fyOf(t.date); fy[y] = fy[y] || { n: 0, v: 0 }; fy[y].n++; fy[y].v += t.amount; });
+  let run = 0; const rows = c.tx.map(t => { run += t.amount; return { t, run }; }).reverse();
+  const lim = VIEW.sub.carLim || 60;
+  return `${withHead ? `<div class="grid g4">${kpi('🚗 Total EMIs paid', rs(c.total), c.tx.length + ' EMIs', 'vio')}${kpi('💳 EMI', rs(c.emi), 'around the ' + c.day + (c.day % 10 === 1 && c.day !== 11 ? 'st' : c.day % 10 === 2 && c.day !== 12 ? 'nd' : c.day % 10 === 3 && c.day !== 13 ? 'rd' : 'th') + ' of each month', 'gold')}${kpi('📅 This FY', rs(c.thisFy.reduce((s, t) => s + t.amount, 0)), c.thisFy.length + ' EMIs', 'acc')}${kpi('🗓️ First EMI seen', fmtDate(c.first.date), 'last paid ' + fmtDate(c.last.date), 'grn')}</div>
+    <div class="alert vio mt">ℹ️ <div>Worked out from Dad’s statement. Add the loan amount, tenure and interest rate (from the loan papers) to also see <b>EMIs left</b>, the <b>end date</b> and the <b>amount still outstanding</b>.</div><span class="sp"></span><button class="btn sm pri" data-act="loanEdit">＋ Loan details</button></div>` : ''}
+  ${c.miss.length ? `<div class="alert red mt">⚠️ <div>No EMI found for <b>${c.miss.map(ymText).join(', ')}</b> — check whether it bounced, was paid another way, or that month’s statement is missing.</div></div>` : ''}
+  <div class="sec">Car-loan EMIs — every payment</div>
+  <div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Financial year</th><th class="ra">EMIs</th><th class="ra">Paid</th></tr></thead><tbody>${Object.entries(fy).sort((a, b) => b[0].localeCompare(a[0])).map(([y, v]) => `<tr><td>${esc(y)}</td><td class="ra">${v.n}</td><td class="ra num b">${rs(v.v)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="ra b">${c.tx.length}</td><td class="ra num b">${rs(c.total)}</td></tr></tbody></table></div></div>
+  <div class="card mt" style="padding:4px 14px">${rows.slice(0, lim).map(({ t, run }) => `<div class="txc" data-act="editTxn" data-id="${t.id}" data-prof="parents"><span class="itile" style="--ic:#ef4444">🚘</span><div class="mid"><div class="t1">${fmtDate(t.date)}</div><div class="t2">${esc(t.desc)}</div></div><div class="r"><b class="num dr">−${rs(t.amount)}</b><div class="t2">total ${rs(run)}</div></div></div>`).join('')}
+  ${rows.length > lim ? `<div style="text-align:center;padding:10px"><button class="btn sm" data-act="carMore">Show more (${rows.length - lim} left)</button></div>` : ''}</div>`;
+}
+const _loanView = loanView;
+loanView = function () {
+  const loans = live(P('parents').loans || []);
+  if (!loans.length) return carAutoHtml(true);
+  return _loanView() + carAutoHtml(false);
+};
+const _papaCard = papaCard;
+papaCard = function () {
+  const h = _papaCard(), c = carStats(); if (!c) return h;
+  return h + `<div class="card mt clk" data-act="subTab" data-base="parents" data-sub="loan" style="cursor:pointer"><div class="flex"><span class="itile" style="--ic:#ef4444">🚗</span><div class="mid" style="flex:1"><div class="t1"><b>Car loan</b> — ${rs(c.emi)}/month</div><div class="t2">Paid so far <b>${rs(c.total)}</b> (${c.tx.length} EMIs) · this FY ${rs(c.thisFy.reduce((s, t) => s + t.amount, 0))} · last ${fmtDate(c.last.date)}${c.miss.length ? ` · <span class="dr">⚠ ${c.miss.length} month${c.miss.length > 1 ? 's' : ''} missing</span>` : ''}</div></div><span class="muted">›</span></div></div>`;
+};
+Object.assign(ACT, { carMore: () => { VIEW.sub.carLim = (VIEW.sub.carLim || 60) + 200; VIEW.keepScroll = true; rerender(); } });
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
