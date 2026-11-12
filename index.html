@@ -551,6 +551,13 @@ select.inp option,select.inp optgroup{background:var(--cardSolid);color:var(--tx
 .cmg{margin-bottom:10px}.cmgh{font-weight:800;font-size:13.5px;padding:8px 2px 6px;border-bottom:1px solid var(--line);margin-bottom:6px}
 .sonc{display:flex;gap:14px;align-items:flex-start;cursor:pointer;border:2px solid transparent}.sonc.on{border-color:var(--blue)}.sonc .mid{flex:1;min-width:0}.sonc .t1{font-weight:800;font-size:16px}.sonc .t2{color:var(--tx3);font-size:12px;margin-top:4px}
 .sonrow{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--tx2);margin-top:4px}
+/* v4.0 home flow */
+.flowrow{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin-top:12px}
+.flowrow>i{align-self:center;font-style:normal;color:var(--tx2);font-weight:700}
+.flowb{flex:1;min-width:120px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--fc,#3b82f6) 14%,transparent);border:1px solid color-mix(in srgb,var(--fc,#3b82f6) 35%,transparent);cursor:pointer}
+.flowb small{display:block;color:var(--tx2);font-size:12px;margin-bottom:4px}.flowb b{font-size:20px}
+.flowb.grn{--fc:#10b981}.flowb.vio{--fc:#8b5cf6}.flowb.acc{--fc:#3b82f6}.flowb.red{--fc:#ef4444}
+@media(max-width:700px){.flowrow>i{display:none}.flowb{min-width:calc(50% - 8px)}}
 </style></head>
 <body><div id="app"></div>
 <noscript>Please enable JavaScript to use BlueWave Finance.</noscript>
@@ -886,7 +893,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ============ BlueWave Finance — core (data, rules, storage, sync) ============ */
 'use strict';
-const APP_VER = '3.14';
+const APP_VER = '4.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -913,11 +920,12 @@ const fyOf = s => { const d = parseISO(s); const y = d.getMonth() >= 3 ? d.getFu
 /* ---------- categories ---------- */
 // main groups (what charts, budgets and the dashboard show) → sub-categories (what each entry is tagged with)
 const GROUPS = [
-  ['home', 'Home Bills', '🏠', 'exp'], ['phonetv', 'Phone & TV', '📱', 'exp'], ['food', 'Food & Groceries', '🛒', 'exp'], ['travel', 'Travel & Vehicle', '🚗', 'exp'],
-  ['shop', 'Shopping', '🛍️', 'exp'], ['health', 'Health', '🏥', 'exp'], ['edu', 'Education', '🎓', 'exp'], ['fun', 'Subscriptions & Fun', '🎬', 'exp'],
-  ['family', 'Family', '👪', 'exp'], ['loans', 'Loans & Cards', '💳', 'exp'], ['ins', 'Insurance', '🛡️', 'exp'], ['tax', 'Charges & Taxes', '🏦', 'exp'], ['misc', 'Cash & Other', '💵', 'exp'],
-  ['invest', 'Investments', '📈', 'inv'], ['income', 'Income', '💰', 'inc'], ['xfer', 'Transfers', '🔄', 'xfer'],
+  ['home', 'Home & bills', '🏠', 'exp'], ['food', 'Food & groceries', '🛒', 'exp'], ['travel', 'Travel & vehicle', '🚗', 'exp'], ['shop', 'Shopping & fun', '🛍️', 'exp'],
+  ['health', 'Health', '💊', 'exp'], ['family', 'Family', '👪', 'exp'], ['loans', 'Loans, cards, insurance & tax', '💳', 'exp'], ['misc', 'Other', '💵', 'exp'],
+  ['abb', 'To ABB', '👩', 'abb'], ['invest', 'Investments', '📈', 'inv'], ['income', 'Income', '💰', 'inc'], ['xfer', 'Transfers', '🔄', 'xfer'],
 ];
+// v4.0: 13 spending groups merged into 8 → old group id → new group id
+const GROUP_REMAP = { phonetv: 'home', edu: 'misc', fun: 'shop', ins: 'loans', tax: 'loans' };
 const CATS = [
   // 🏠 Home Bills
   ['electricity', 'Electricity', '💡', 'exp', 'home'], ['water', 'Water', '🚰', 'exp', 'home'], ['gas', 'Piped gas', '🔥', 'exp', 'home'], ['lpg', 'LPG cylinder', '🛢️', 'exp', 'home'],
@@ -961,6 +969,15 @@ const CATS = [
   ['self', 'Self-transfer', '🔄', 'xfer', 'xfer'], ['friend', 'Friends (lend/borrow)', '🤝', 'xfer', 'xfer'], ['fromhusband', 'Received from Ritesh', '👨', 'xfer', 'xfer'],
   ['tohusband', 'Sent to Ritesh', '👨', 'xfer', 'xfer'], ['fromson', 'Son → Dad (repaid / given)', '👨', 'xfer', 'xfer'], ['toson', 'Dad → son (taken)', '👦', 'xfer', 'xfer'], ['cardpay', 'Card bill (card spends counted)', '💳', 'xfer', 'xfer'],
 ];
+CATS.push(['gold', 'Gold', '🪙', 'inv', 'invest'], ['crypto', 'Crypto F&O (Delta)', '🪙', 'inv', 'invest']);
+CATS.forEach(c => { c[4] = GROUP_REMAP[c[4]] || c[4];
+  if (c[0] === 'wife') { c[1] = 'Sent to ABB'; c[3] = 'abb'; c[4] = 'abb'; }
+  if (c[0] === 'tools') { c[1] = 'Trading tools & apps (Tradetron…)'; c[4] = 'misc'; }
+  if (c[0] === 'invest') c[1] = 'Mutual funds / SIP';
+  if (c[0] === 'trading') c[1] = 'Stocks & F&O (broker)';
+  if (c[0] === 'tradingpay') { c[1] = 'Taken out of broker / redeemed'; c[3] = 'inv'; c[4] = 'invest'; }
+  if (c[0] === 'wages') c[1] = 'Salary (ship)';
+});
 const CAT = Object.fromEntries(CATS.map(([id, name, icon, type, group]) => [id, { id, name, icon, type, group }]));
 const GRP = Object.fromEntries(GROUPS.map(([id, name, icon, type]) => [id, { id, name, icon, type }]));
 // a category key is either a sub-category id ("grocery") or a whole group ("g:food")
@@ -984,7 +1001,10 @@ const RULES_DR = [
   ['nps', /NPSTRUST|PFRDA|PROTEANCRA|NSDLNPS|^NPS|\/NPS/],
   ['fd', /FDBOOKED|FIXEDDEPOSIT|RDINSTAL|RECURRINGDEP|^RD\//],
   ['invest', /NACH-MUT|INDIANCLEARING|ICCL|PGBSELIMITED|BSELIMITED|MUTUALFUNDSIP|^MUTUALFUND$|CAMS|KFINTECH|NJINDIA/],
-  ['trading', /ZERODHA|DELTAEXCHANGE|UPSTOX|ANGELONE|ANGELBROKING|GROWW|DHAN|FLATTRADE|5PAISA/],
+  ['rent', /VILASBABAR|BABARVILAS|VILASB\/|VILASBABA/],
+  ['gold', /SAFEGOLD|AUGMONT|MMTCPAMP|DIGIGOLD|DIGITALGOLD|GOLDPURCHASE/],
+  ['crypto', /DELTAEX|DELTAEXCHANGE/],
+  ['trading', /ZERODHA|UPSTOX|ANGELONE|ANGELBROKING|GROWW|DHAN|FLATTRADE|5PAISA|FYERS|FINVASIA|SHOONYA/],
   ['tools', /TRADETRON|ALGOTEST|TICKERTAPE|NEUTRINO|SENSIBULL|STREAK|TRADINGVIEW|OPSTRA|QUANTSAPP|STOCKMOCK/],
   ['itr', /CLEARTAX|TAX2WIN|ITRFILING|QUICKO/],
   ['taxes', /ETAX|INCOMETAX|TIN2|TAXPAYMENT|ADVANCETAX|CBDT|^WTAX/],
@@ -1045,10 +1065,10 @@ const RULES_DR = [
 ];
 const RULES_CR = [
   ['pension', /PENSION|PENSN|PENS\.|SPARSH|CPAO|PPOPEN|PENCR|\/PEN\/|CGDA|RBIS0CGDA/],
-  ['wages', /NREREM|V\.?SHIPS|SALARY|WAGES|\/SAL\/|SHIPMANAGEMENT|SHIPPING/],
+  ['wages', /NREREM|V\.?SHIPS|VSHIPS|SALARY|WAGES|\/SAL\/|SHIPMANAGEMENT|SHIPPING/],
   ['interest', /^SBINT|INT\.?PD|INTEREST|^INT:/],
   ['refund', /CRADJ|REFUND|REVERSAL|\/REV\/|CASHBACK|^REV|DIFFINSETT|REWARDEDFO|GOOG-PAYMEN|INGENICO|^RREF|AY20\d\d|ITREFUND|TAXREFUND/],
-  ['tradingpay', /ZERODHA|NEUTRINO|DELTAEXCHANGE|UPSTOX|ANGELONE|DHAN|GROWW|FLATTRADE/],
+  ['tradingpay', /ZERODHA|NEUTRINO|DELTAEX|UPSTOX|ANGELONE|DHAN|GROWW|FLATTRADE|FYERS|FINVASIA|SHOONYA|NJINDIA|NJEWEALTH/],
   ['ytincome', /YOUTUBE|ADSENSE|GOOGLEINDIA|TRADETRON/],
 ];
 
@@ -1090,7 +1110,7 @@ function remarkOf(d) {
 const payeeKey = p => compact(p).replace(/[^A-Z]/g, '').slice(0, 24);
 
 /* ---------- state ---------- */
-const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payeeApp: {}, dismissed: [] });
+const EMPTY_PROFILE = (name) => ({ name, accounts: [], txns: [], bills: [], friends: [], rules: [], budgets: [], goals: [], assets: [], voyages: [], members: [], loans: [], cats: [], payslips: [], invvals: [], payeeApp: {}, dismissed: [] });
 function seedState() {
   const t = nowIso();
   // fixed ids + an old timestamp, so every device creates the SAME built-in records and sync never doubles them
@@ -1196,6 +1216,18 @@ function migrate() { const d = seedState(); S.settings = Object.assign(d.setting
       if (r.cat === 'ccbill' && r.cardId && (t.cat !== 'ccbill' || t.cardId !== r.cardId)) { t.cat = 'ccbill'; t.cardId = r.cardId; t.conf = 'h'; touch(t); }
       else if (r.app === 'Amazon Pay' && !t.app && t.mode === 'UPI' && t.dir === 'dr') { t.app = 'Amazon Pay'; t.appConf = 'h'; touch(t); } });
   }
+  if (!S.settings.v4) { S.settings.v4 = 1;
+    PROFS.forEach(k => { const pr = S.profiles[k]; if (!pr) return;
+      // budgets on merged groups → add together
+      const bs = live(pr.budgets || []), seen = {};
+      bs.forEach(b => { if (!isG(b.cat)) return; const g = GROUP_REMAP[b.cat.slice(2)]; if (!g) return; const tgt = bs.find(x => x.cat === 'g:' + g && !x.deleted) || seen[g];
+        if (tgt && tgt !== b) { tgt.amount = Math.round(tgt.amount + b.amount); touch(tgt); b.deleted = true; touch(b); } else { b.cat = 'g:' + g; seen[g] = b; touch(b); } });
+      (pr.cats || []).forEach(c => { if (c.group && GROUP_REMAP[c.group]) { c.group = GROUP_REMAP[c.group]; touch(c); } });
+      live(pr.txns || []).forEach(t => { if (t.userSet) return; const r = classify(t, k);
+        if (['rent', 'crypto', 'gold'].includes(r.cat) && (t.cat !== r.cat || t.conf !== 'h') && (!t.reviewed || ['other', 'trading', 'home', 'rent'].includes(t.cat))) { t.cat = r.cat; t.conf = 'h'; touch(t); }
+        else if (r.cat === 'tradingpay' && ['otherinc', 'refund'].includes(t.cat) && !t.reviewed) { t.cat = r.cat; touch(t); } });
+    });
+  }
   if (!S.settings.abbV) { S.settings.abbV = 1;
     if (!S.settings.wifeName || /^ankita/i.test(S.settings.wifeName)) S.settings.wifeName = 'ABB';
     const w = S.profiles.wife; if (/^ankita/i.test(w.name || '')) w.name = 'ABB';
@@ -1238,6 +1270,11 @@ function sonOf(profKey, t, c) {
 // people you pay so they hand Dad the cash (e.g. Khem Chand) — counted as money you gave Dad
 function dadViaOf(c) { const w = String((S.settings && S.settings.dadVia) || '').split(',').map(x => x.trim()).filter(x => compact(x).length >= 4).find(x => c.includes(compact(x))); return w ? w.toLowerCase().replace(/\b\w/g, x => x.toUpperCase()) : null; }
 const ICICI_CARD_ID = 'seed_me_amazon_pay_icici_card', ICICI_CARD_RE = /^UPI\/CREDIT\/ICIC|AMAZONICICI|AMAZONPAYICICI|ICICICREDITCARD|ICICIBANKCREDITCARD|ICICICARD/;
+// which platform an investment / trading entry went to (worked out from the narration, not stored)
+const BROKERS = [['Zerodha Coin', /ZERODHACOIN|COINBYZERODHA|ICCL|INDIANCLEARING|BSELIMITED|PGBSELIMITED/], ['Zerodha', /ZERODHA/], ['NJ E-Wealth', /NJINDIA|NJEWEALTH|NJWEALTH/], ['Shoonya', /FINVASIA|SHOONYA/],
+  ['Delta Exchange', /DELTAEX/], ['Fyers', /FYERS/], ['Flattrade', /FLATTRADE/], ['Tradetron', /TRADETRON/], ['Tickertape', /TICKERTAPE/], ['Upstox', /UPSTOX/], ['Groww', /GROWW/], ['Dhan', /DHAN/], ['Angel One', /ANGEL/], ['Mutual fund (other)', /CAMS|KFINTECH|NACH-MUT|MUTUALFUND/]];
+const brokerOf = t => { const c = compact(t.desc); const b = BROKERS.find(([, re]) => re.test(c)); return b ? b[0] : (catGroup(t.cat) === 'invest' ? 'Other' : null); };
+const employerOf = t => /V\.?SHIPS|VSHIPS/.test(compact(t.desc)) ? 'V Ships' : (t.cat === 'wages' ? (t.employer || 'Other') : null);
 function classify(t, profKey) {
   const prof = P(profKey), st = S.settings;
   const c = compact(t.desc), out = { cat: 'other', conf: 'l', app: null, appConf: null, flags: [] };
@@ -1269,7 +1306,7 @@ function classify(t, profKey) {
     else {
       const rules = t.dir === 'dr' ? RULES_DR : RULES_CR;
       const hit = rules.find(([, re]) => re.test(c));
-      if (hit) { out.cat = hit[0]; out.conf = 'm'; if (['self', 'invest', 'wages', 'interest', 'cash', 'charges', 'taxes'].includes(hit[0])) out.conf = 'h'; }
+      if (hit) { out.cat = hit[0]; out.conf = 'm'; if (['self', 'invest', 'wages', 'interest', 'cash', 'charges', 'taxes', 'rent', 'crypto', 'gold', 'trading', 'tools', 'tradingpay'].includes(hit[0])) out.conf = 'h'; }
       else if (t.dir === 'cr') { const ex = RULES_DR.find(([, re]) => re.test(c)); out.cat = ex ? 'refund' : 'otherinc'; out.conf = ex ? 'm' : 'l'; }
     }
   }
@@ -1402,7 +1439,7 @@ function accountBalance(profKey, accId) {
 }
 
 /* ---------- sync (manual, via the user's own Google Apps Script) ---------- */
-const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans', 'cats'];
+const COLL = ['accounts', 'txns', 'bills', 'friends', 'rules', 'budgets', 'goals', 'assets', 'voyages', 'members', 'loans', 'cats', 'payslips', 'invvals'];
 const PROFS = ['me', 'wife', 'parents'];
 // money moving inside the household (not real spending when both profiles are combined)
 const hhSkip = t => catType(t.cat) === 'xfer' || t.cat === 'wife';
@@ -1635,9 +1672,9 @@ function hbars(items, fmt = rs) {
 function txIn(profKey, from, to) { return live(P(profKey).txns).filter(t => t.date >= from && t.date <= to); }
 function sumBy(arr, keyFn) { const m = {}; arr.forEach(t => { const k = keyFn(t); m[k] = (m[k] || 0) + t.amount; }); return m; }
 function totals(arr) {
-  let inc = 0, exp = 0, inv = 0;
-  arr.forEach(t => { const ty = catType(t.cat); if (ty === 'exp') exp += t.dir === 'dr' ? t.amount : -t.amount; else if (ty === 'inc') inc += t.dir === 'cr' ? t.amount : -t.amount; else if (ty === 'inv') inv += t.dir === 'dr' ? t.amount : -t.amount; });
-  return { inc, exp, inv, net: inc - exp, rate: inc > 0 ? (inc - exp) / inc : null };
+  let inc = 0, exp = 0, inv = 0, abb = 0;
+  arr.forEach(t => { const ty = catType(t.cat); if (ty === 'exp') exp += t.dir === 'dr' ? t.amount : -t.amount; else if (ty === 'inc') inc += t.dir === 'cr' ? t.amount : -t.amount; else if (ty === 'inv') inv += t.dir === 'dr' ? t.amount : -t.amount; else if (ty === 'abb') abb += t.dir === 'dr' ? t.amount : -t.amount; });
+  return { inc, exp, inv, abb, net: inc - exp - abb, rate: inc > 0 ? (inc - exp - abb) / inc : null };
 }
 function catItems(arr) {   // spending by MAIN category (tap → its sub-categories)
   const m = {}; arr.filter(t => catType(t.cat) === 'exp').forEach(t => { const g = catGroup(t.cat); m[g] = (m[g] || 0) + (t.dir === 'dr' ? t.amount : -t.amount); });
@@ -4975,6 +5012,352 @@ papaCard = function () {
   return h + `<div class="card mt clk" data-act="subTab" data-base="parents" data-sub="loan" style="cursor:pointer"><div class="flex"><span class="itile" style="--ic:#ef4444">🚗</span><div class="mid" style="flex:1"><div class="t1"><b>Car loan</b> — ${rs(c.emi)}/month</div><div class="t2">Paid so far <b>${rs(c.total)}</b> (${c.tx.length} EMIs) · this FY ${rs(c.thisFy.reduce((s, t) => s + t.amount, 0))} · last ${fmtDate(c.last.date)}${c.miss.length ? ` · <span class="dr">⚠ ${c.miss.length} month${c.miss.length > 1 ? 's' : ''} missing</span>` : ''}</div></div><span class="muted">›</span></div></div>`;
 };
 Object.assign(ACT, { carMore: () => { VIEW.sub.carLim = (VIEW.sub.carLim || 60) + 200; VIEW.keepScroll = true; rerender(); } });
+
+/* ============ v4.0 — simpler layout: Home · Me · ABB · Mom & Dad · More, global search, salary, investments, rent, tax pack ============ */
+const RD = {};
+const sumAmt = arr => arr.reduce((s, t) => s + t.amount, 0);
+const net = (arr, out) => arr.reduce((s, t) => s + (t.dir === out ? t.amount : -t.amount), 0);
+const segBtns = (act, cur, list, extra = '') => `<div class="seg" style="overflow-x:auto;max-width:100%">${list.map(([k, l]) => `<button class="${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}" ${extra} style="white-space:nowrap">${l}</button>`).join('')}</div>`;
+// one period filter used across the new pages
+const PERS = [['m0', 'This month'], ['m1', 'Last month'], ['fy0', 'This FY'], ['fy1', 'Last FY'], ['all', 'All time']];
+function perRange(p) { const td = today(); if (p === 'all') return ['0000-01-01', '9999-12-31']; if (p === 'm0') return monthRange(ym(td)); if (p === 'm1') return monthRange(prevMonth(ym(td))); return fyRange(fyNum(td) - (p === 'fy1' ? 1 : 0)); }
+const perLabel = p => (PERS.find(x => x[0] === p) || PERS[4])[1];
+function filterBar(key, opts = {}) {
+  const p = VIEW.sub['p_' + key] || opts.def || 'fy0', q = VIEW.sub['q_' + key] || '';
+  return `<div class="flex" style="gap:8px;flex-wrap:wrap;margin:4px 0 12px">${segBtns('rdPer', p, PERS, `data-k="${key}"`)}<input class="inp" style="flex:1;min-width:160px" placeholder="🔎 Search in this list…" value="${esc(q)}" data-act="rdQ" data-k="${key}"></div>`;
+}
+const fbState = (key, def = 'fy0') => { const p = VIEW.sub['p_' + key] || def; return { p, r: perRange(p), q: (VIEW.sub['q_' + key] || '').toLowerCase().trim() }; };
+const txMatch = (t, q) => !q || (maskWife(t.payee || '') + ' ' + maskWife(t.desc) + ' ' + (t.note || '') + ' ' + t.amount + ' ' + catName(t.cat) + ' ' + fmtDate(t.date) + ' ' + (t.app || '')).toLowerCase().includes(q);
+const listCard = (arr, k, lim = 60, more = '') => `<div class="card" style="padding:4px 14px">${arr.length ? arr.slice(0, lim).map(t => txRow(t, k).replace('<div class="t2">', `<div class="t2">${t.source === 'upi' ? '📱 ' : ''}${fmtDate(t.date)} · `)).join('') + (arr.length > lim ? `<div style="text-align:center;padding:10px"><button class="btn sm" data-act="rdMore" data-k="${more}">Show more (${arr.length - lim} left)</button></div>` : '') : emptyBox('🔎', 'Nothing here', 'Change the period or search.', '')}</div>`;
+const lim = k => VIEW.sub['lim_rd_' + k] || 60;
+const byDesc = (a, b) => b.date.localeCompare(a.date);
+function fyTable(arr, cols) {   // cols: [[label, fn(list)]]
+  const g = {}; arr.forEach(t => { const y = fyOf(t.date); (g[y] = g[y] || []).push(t); });
+  const ys = Object.keys(g).sort().reverse(); if (!ys.length) return '';
+  return `<div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Financial year</th>${cols.map(c => `<th class="ra">${c[0]}</th>`).join('')}</tr></thead><tbody>${ys.map(y => `<tr><td>${esc(y)}</td>${cols.map(c => `<td class="ra num">${c[1](g[y])}</td>`).join('')}</tr>`).join('')}<tr><td><b>Total</b></td>${cols.map(c => `<td class="ra num b">${c[1](arr)}</td>`).join('')}</tr></tbody></table></div></div>`;
+}
+const fyLabYM = d => fyOf(d);
+
+/* ---------------- 💰 Salary & income ---------------- */
+function salaryTx(k = 'me') { return live(P(k).txns).filter(t => t.cat === 'wages' && t.dir === 'cr'); }
+function contracts(tx) {   // salary credits more than ~70 days apart = a new contract
+  const s = tx.slice().sort((a, b) => a.date.localeCompare(b.date)), out = [];
+  s.forEach(t => { const c = out[out.length - 1]; if (c && daysBetween(c.last, t.date) <= 70) { c.tx.push(t); c.last = t.date; } else out.push({ first: t.date, last: t.date, tx: [t] }); });
+  return out.reverse();
+}
+function runway() {
+  const bal = P('me').accounts.filter(a => !a.deleted && a.status !== 'closed' && !['UPI app', 'Credit card'].includes(a.type)).map(a => accountBalance('me', a.id)).filter(Boolean).reduce((s, b) => s + b.bal, 0);
+  const e = latestDataMonth(['me']), ms = lastMonths(prevMonth(e), 6);
+  const spend = ms.map(k => { const T = totals(txIn('me', ...monthRange(k))); return T.exp + T.abb; });
+  const avg = spend.reduce((s, v) => s + v, 0) / (spend.length || 1);
+  return { bal, avg, months: avg > 0 ? bal / avg : null };
+}
+function incomeTab() {
+  const { p, r, q } = fbState('inc', 'all');
+  const all = salaryTx(), tx = all.filter(t => t.date >= r[0] && t.date <= r[1] && txMatch(t, q)).sort(byDesc);
+  const fy0 = fyRange(fyNum(today())), thisFy = all.filter(t => t.date >= fy0[0] && t.date <= fy0[1]);
+  const last = all.slice().sort(byDesc)[0], cs = contracts(all), rw = runway();
+  const emp = {}; all.forEach(t => { const e = employerOf(t); emp[e] = emp[e] || []; emp[e].push(t); });
+  const accN = id => accName('me', id);
+  const other = live(P('me').txns).filter(t => t.date >= r[0] && t.date <= r[1] && catType(t.cat) === 'inc' && t.cat !== 'wages' && txMatch(t, q));
+  const og = {}; other.forEach(t => { og[t.cat] = (og[t.cat] || 0) + (t.dir === 'cr' ? t.amount : -t.amount); });
+  return `${filterBar('inc', { def: 'all' })}
+  <div class="grid g4">${kpi('🚢 Salary · ' + perLabel(p), rs(sumAmt(tx)), tx.length + ' credits', 'grn')}${kpi('📅 This FY', rs(sumAmt(thisFy)), thisFy.length + ' credits', 'acc')}${kpi('🕒 Last salary', last ? rs(last.amount) : '—', last ? fmtDate(last.date) + ' · ' + esc(accN(last.account)) : 'None found yet', 'vio')}${kpi('🛟 Runway at home', rw.months != null ? rw.months.toFixed(1) + ' months' : '—', rw.months != null ? rs(rw.bal) + ' in banks ÷ ' + rs(Math.round(rw.avg)) + '/month spent' : 'needs balances', 'gold')}</div>
+  <div class="sec">By company</div><div class="grid g3">${Object.entries(emp).map(([e, l]) => `<div class="card kpi"><div class="lab">🏢 ${esc(e)}</div><div class="val num">${rs(sumAmt(l))}</div><div class="foot">${l.length} credits · ${fmtDate(l.map(t => t.date).sort()[0])} → ${fmtDate(l.map(t => t.date).sort().pop())} · into ${[...new Set(l.map(t => accN(t.account)))].map(esc).join(', ')}</div></div>`).join('') || '<div class="muted small">No salary credits found yet — import your Kotak NRE / NRO statements.</div>'}</div>
+  ${fyTable(all, [['Credits', l => l.length], ['Salary received', l => rs(sumAmt(l))]])}
+  ${cs.length ? `<div class="sec">Contracts (worked out from salary dates)</div><div class="card" style="padding:4px 14px">${cs.map((c, i) => `<div class="txc"><span class="itile" style="--ic:#0ea5e9">🚢</span><div class="mid"><div class="t1">Contract ${cs.length - i} · ${fmtDate(c.first)} → ${fmtDate(c.last)}</div><div class="t2">${c.tx.length} salary credit${c.tx.length > 1 ? 's' : ''} · avg ${rs(Math.round(sumAmt(c.tx) / c.tx.length))}${payslipsIn(c.first, c.last).length ? ' · ' + payslipsIn(c.first, c.last).length + ' payslips' : ''}</div></div><div class="r"><b class="num cr">${rs(sumAmt(c.tx))}</b></div></div>`).join('')}</div>` : ''}
+  ${payslipSection()}
+  <div class="sec">Salary credits — ${perLabel(p)}</div>${listCard(tx, 'me', lim('inc'), 'inc')}
+  ${other.length ? `<div class="sec">Other income — ${perLabel(p)}</div><div class="grid g4">${Object.entries(og).map(([c, v]) => kpi(catIcon(c) + ' ' + esc(catName(c)), rs(v), other.filter(t => t.cat === c).length + ' entries', '')).join('')}</div>` : ''}`;
+}
+
+/* ---------------- 🧾 Payslips (entered by hand now; PDF reading once a sample is shared) ---------------- */
+const slips = () => live(P('me').payslips || []).sort((a, b) => b.month.localeCompare(a.month));
+const payslipsIn = (f, t) => slips().filter(s => s.month + '-28' >= f.slice(0, 7) + '-01' && s.month + '-01' <= t);
+function slipMatch(s) {   // the NRE/NRO credit that this payslip's remittance became
+  if (!s.remitInr) return null;
+  const from = s.month + '-01', to = addDays(monthRange(s.month)[1], 45);
+  return salaryTx().filter(t => t.date >= from && t.date <= to).sort((a, b) => Math.abs(a.amount - s.remitInr) - Math.abs(b.amount - s.remitInr))[0] || null;
+}
+function payslipSection() {
+  const L = slips();
+  const tot = k => L.reduce((s, x) => s + (+x[k] || 0), 0);
+  return `<div class="sec">🧾 Payslips<span class="sp"></span><button class="btn sm" data-act="slipEdit">＋ Add payslip</button><label class="btn sm pri" style="cursor:pointer;text-transform:none;letter-spacing:0">⬆ Upload payslips<input type="file" id="slip_file" multiple accept=".pdf" style="display:none"></label></div>
+  ${L.length ? `<div class="grid g4">${kpi('💵 Earned onboard', '$' + Math.round(tot('earnedUsd')).toLocaleString('en-IN'), L.length + ' payslips', 'grn')}${kpi('💸 Cash taken onboard', '$' + Math.round(tot('cashUsd')).toLocaleString('en-IN'), tot('earnedUsd') ? Math.round(tot('cashUsd') / tot('earnedUsd') * 100) + '% of earnings' : '', 'gold')}${kpi('🧾 Other deductions', '$' + Math.round(tot('deductUsd')).toLocaleString('en-IN'), 'slop chest, phone, etc.', 'red')}${kpi('🏦 Sent home', '$' + Math.round(tot('remitUsd')).toLocaleString('en-IN'), rs(tot('remitInr')) + ' credited', 'acc')}</div>
+  <div class="card mt" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Month</th><th>Vessel</th><th class="ra">Earned $</th><th class="ra">Cash onboard $</th><th class="ra">Deductions $</th><th class="ra">Sent home $</th><th class="ra">Credited ₹</th><th class="ra">Rate</th></tr></thead><tbody>${L.map(s => { const m = slipMatch(s), inr = m ? m.amount : s.remitInr; return `<tr class="clk" data-act="slipEdit" data-id="${s.id}"><td>${ymLabel(s.month)}</td><td>${esc(s.vessel || '')}</td><td class="ra num">${(+s.earnedUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${(+s.cashUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${(+s.deductUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${(+s.remitUsd || 0).toLocaleString('en-IN')}</td><td class="ra num">${inr ? rs(inr) + (m ? ' ✓' : '') : '—'}</td><td class="ra num">${inr && s.remitUsd ? '₹' + (inr / s.remitUsd).toFixed(2) : '—'}</td></tr>`; }).join('')}</tbody></table></div></div>`
+  : `<div class="card"><div class="small muted">Add each month’s payslip — earned (USD), cash taken onboard, other deductions and the amount sent home — to see where your salary goes. When you share one V Ships payslip PDF, uploads here will be read automatically.</div></div>`}`;
+}
+function slipModal(id) {
+  const L = P('me').payslips = P('me').payslips || []; const s = L.find(x => x.id === id) || { month: ym(today()), vessel: '', earnedUsd: '', cashUsd: '', deductUsd: '', remitUsd: '', remitInr: '', note: '' };
+  const f = (k, l, ty = 'number') => `<div class="fld"><label>${l}</label><input class="inp" data-sf="${k}" type="${ty}" value="${esc(s[k] ?? '')}"></div>`;
+  modal(id ? 'Edit payslip' : 'Add payslip', `<div class="frow">${f('month', 'Month', 'month')}${f('vessel', 'Vessel', 'text')}</div><div class="frow mt">${f('earnedUsd', 'Total earned (USD)')}${f('cashUsd', 'Cash advance onboard (USD)')}</div><div class="frow mt">${f('deductUsd', 'Other deductions (USD)')}${f('remitUsd', 'Remitted home (USD)')}</div><div class="frow mt">${f('remitInr', 'Credited in bank (₹, optional)')}${f('note', 'Note', 'text')}</div>`,
+    `${id ? '<button class="btn dan" id="sl_del">Delete</button><span style="flex:1"></span>' : ''}<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="sl_save">Save</button>`, { onMount: m => {
+      $('#sl_save', m).onclick = () => { const o = id ? s : { id: uid() }; $$('[data-sf]', m).forEach(i => o[i.dataset.sf] = i.type === 'number' ? (i.value === '' ? '' : +i.value) : i.value.trim()); if (!o.month) { toast('Pick the month'); return; } touch(o); if (!id) L.push(o); save(); closeModal(); rerender(); };
+      if (id) $('#sl_del', m).onclick = () => { removeRec(L, id); save(); closeModal(); rerender(); };
+    } });
+}
+document.addEventListener('change', e => { if (e.target.id === 'slip_file' && e.target.files.length) { const n = e.target.files.length; e.target.value = ''; modal('Payslips', `<div class="alert acc">🧾 <div>${n} file${n > 1 ? 's' : ''} picked. The app can’t read V Ships payslips yet — share one payslip with Claude so its layout can be added, then upload them all here and they’ll be read in one go. Until then, use <b>＋ Add payslip</b> to enter the totals by hand.</div></div>`, '<button class="btn pri" data-act="closeModal">OK</button>'); } });
+
+/* ---------------- 👩 To ABB ---------------- */
+function abbTab() {
+  const { p, r, q } = fbState('abb', 'all');
+  const all = live(P('me').txns).filter(t => t.cat === 'wife'), sent = all.filter(t => t.dir === 'dr'), back = all.filter(t => t.dir === 'cr');
+  const tx = all.filter(t => t.date >= r[0] && t.date <= r[1] && txMatch(t, q)).sort(byDesc);
+  const fy0 = fyRange(fyNum(today())), m0 = monthRange(ym(today()));
+  const months = [...new Set(sent.map(t => ym(t.date)))].length;
+  const l12 = lastMonths(latestDataMonth(['me']), 12);
+  return `${filterBar('abb', { def: 'all' })}
+  <div class="grid g4">${kpi('👩 Given till now', rs(net(all, 'dr')), sent.length + ' transfers' + (back.length ? ' · ' + rs(sumAmt(back)) + ' came back' : ''), 'vio')}${kpi('📅 This FY', rs(net(all.filter(t => t.date >= fy0[0] && t.date <= fy0[1]), 'dr')), fyOf(today()), 'acc')}${kpi('🗓️ This month', rs(net(all.filter(t => t.date >= m0[0] && t.date <= m0[1]), 'dr')), ymLabel(ym(today())), 'gold')}${kpi('📊 Average / month', months ? rs(Math.round(net(all, 'dr') / months)) : '—', 'over ' + months + ' months', 'grn')}</div>
+  <div class="card mt"><h3>Last 12 months</h3>${barChart(l12.map(ymLabel), [{ name: 'Sent to ' + wifeName(), color: '#a78bfa', values: l12.map(k => net(all.filter(t => ym(t.date) === k), 'dr')) }])}</div>
+  ${fyTable(all, [['Transfers', l => l.filter(t => t.dir === 'dr').length], ['Given (net)', l => rs(net(l, 'dr'))]])}
+  <div class="sec">Transfers — ${perLabel(p)} · ${rs(net(tx, 'dr'))}</div>${listCard(tx, 'me', lim('abb'), 'abb')}`;
+}
+
+/* ---------------- 📈 Investments (by platform) ---------------- */
+const invVals = k => live(P(k).invvals || []);
+function investTab(k) {
+  const key = 'inv_' + k, { p, r, q } = fbState(key, 'all');
+  const all = live(P(k).txns).filter(t => catGroup(t.cat) === 'invest' || t.cat === 'tools');
+  const inv = all.filter(t => catGroup(t.cat) === 'invest');
+  const plat = {}; inv.forEach(t => { const b = brokerOf(t) || 'Other'; plat[b] = plat[b] || []; plat[b].push(t); });
+  const rows = Object.entries(plat).map(([b, l]) => { const inn = sumAmt(l.filter(t => t.dir === 'dr')), out = sumAmt(l.filter(t => t.dir === 'cr')), v = invVals(k).find(x => x.broker === b); return { b, l, inn, out, net: inn - out, v }; }).sort((a, b) => b.net - a.net);
+  const tradeB = ['Zerodha', 'Fyers', 'Flattrade', 'Shoonya', 'Delta Exchange', 'Upstox', 'Dhan', 'Angel One', 'Groww'];
+  const tr = inv.filter(t => tradeB.includes(brokerOf(t)));
+  const fees = all.filter(t => t.cat === 'tools' && t.dir === 'dr');
+  const tx = all.filter(t => t.date >= r[0] && t.date <= r[1] && txMatch(t, q)).sort(byDesc);
+  const totIn = rows.reduce((s, x) => s + x.inn, 0), totOut = rows.reduce((s, x) => s + x.out, 0), withV = rows.filter(x => x.v), val = withV.reduce((s, x) => s + (+x.v.value || 0), 0);
+  return `${filterBar(key, { def: 'all' })}
+  <div class="grid g4">${kpi('📥 Put in', rs(totIn), inv.filter(t => t.dir === 'dr').length + ' payments', 'vio')}${kpi('📤 Taken out', rs(totOut), inv.filter(t => t.dir === 'cr').length + ' credits', 'grn')}${kpi('📈 Net invested', rs(totIn - totOut), 'put in − taken out', 'acc')}${kpi('💼 Current value', withV.length ? rs(val) : '—', withV.length ? withV.length + ' of ' + rows.length + ' platforms updated' : 'tap a platform to enter it', 'gold')}</div>
+  <div class="sec">By platform</div><div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Platform</th><th class="ra">Put in</th><th class="ra">Taken out</th><th class="ra">Net</th><th class="ra">Current value</th><th class="ra">Profit / loss</th></tr></thead><tbody>${rows.map(x => { const pl = x.v ? (+x.v.value || 0) - x.net : null; return `<tr class="clk" data-act="invVal" data-b="${esc(x.b)}" data-prof="${k}"><td><b>${esc(x.b)}</b><div class="small muted">${x.l.length} entries</div></td><td class="ra num">${rs(x.inn)}</td><td class="ra num">${rs(x.out)}</td><td class="ra num b">${rs(x.net)}</td><td class="ra num">${x.v ? rs(+x.v.value) + `<div class="small muted">${fmtDateShort(x.v.date)}</div>` : '<span class="muted small">＋ add</span>'}</td><td class="ra num ${pl == null ? '' : pl >= 0 ? 'cr' : 'dr'}">${pl == null ? '—' : (pl >= 0 ? '+' : '−') + rs(Math.abs(pl))}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">No investment entries found yet.</td></tr>'}</tbody></table></div></div>
+  ${tr.length ? `<div class="sec">Trading accounts (stocks & F&O) — net per financial year</div><div class="small muted" style="margin:-4px 2px 8px">Money taken out minus money put in, per year. This is cash flow, not exact profit — open positions and balances still in the broker aren’t included. F&O is reported as business income in ITR.</div>${fyTable(tr, [['Put in', l => rs(sumAmt(l.filter(t => t.dir === 'dr')))], ['Taken out', l => rs(sumAmt(l.filter(t => t.dir === 'cr')))], ['Net (out − in)', l => { const v = sumAmt(l.filter(t => t.dir === 'cr')) - sumAmt(l.filter(t => t.dir === 'dr')); return `<span class="${v >= 0 ? 'cr' : 'dr'}">${v >= 0 ? '+' : '−'}${rs(Math.abs(v))}</span>`; }]])}` : ''}
+  ${fees.length ? `<div class="small muted mt">🛠️ Trading tools & subscriptions (Tradetron, Tickertape…): <b>${rs(sumAmt(fees))}</b> in ${fees.length} payments — shown under Expenses › Other.</div>` : ''}
+  <div class="sec">Entries — ${perLabel(p)}</div>${listCard(tx, k, lim(key), key)}`;
+}
+function invValModal(k, b) {
+  const L = P(k).invvals = P(k).invvals || []; const v = L.find(x => x.broker === b && !x.deleted);
+  modal('Current value · ' + b, `<div class="frow"><div class="fld"><label>Value today (₹)</label><input class="inp" id="iv_v" type="number" value="${v ? esc(v.value) : ''}"></div><div class="fld"><label>As on</label><input class="inp" id="iv_d" type="date" value="${v ? v.date : today()}"></div></div><div class="small muted mt">From the app (Kite / Coin / NJ / Fyers…) — holdings + cash. Used to show profit / loss.</div>`,
+    `<button class="btn" data-act="closeModal">Cancel</button><button class="btn pri" id="iv_s">Save</button>`, { onMount: m => $('#iv_s', m).onclick = () => { const val = +$('#iv_v', m).value; const o = v || { id: 'iv_' + k + '_' + compact(b).toLowerCase(), broker: b }; o.value = val; o.date = $('#iv_d', m).value || today(); touch(o); if (!v) L.push(o); save(); closeModal(); rerender(); } });
+}
+
+/* ---------------- 🧾 Expenses (+ rent) ---------------- */
+function rentCard(fyY) {
+  const y = fyY ?? fyNum(today()), [f, t] = fyRange(y), td = today();
+  const all = ['me', 'wife'].flatMap(k => live(P(k).txns).filter(x => x.cat === 'rent' && x.dir === 'dr').map(x => Object.assign(Object.create(x), { _k: k })));
+  if (!all.length) return '';
+  const inY = all.filter(x => x.date >= f && x.date <= t);
+  const months = Array.from({ length: 12 }, (_, i) => { const mm = (i + 3) % 12 + 1, yy = mm >= 4 ? y : y + 1, k = yy + '-' + String(mm).padStart(2, '0'); return k; });
+  const years = [...new Set(all.map(x => fyNum(x.date)))].sort((a, b) => b - a);
+  return `<div class="card mt"><h3>🏠 Home rent <small>you + ${esc(wifeName())}</small><span class="sp"></span><select class="inp sm" data-act="rentFy" style="width:auto">${years.map(v => `<option value="${v}" ${v === y ? 'selected' : ''}>FY ${v}-${String(v + 1).slice(2)}</option>`).join('')}</select></h3>
+    <div class="mstrip">${months.map(k => { const l = inY.filter(x => ym(x.date) === k), fut = k + '-01' > td; return `<div class="ms ${fut ? 'fut' : l.length ? 'ok' : 'miss'}"><b>${MSHORT[+k.slice(5) - 1]}</b><small>${fut ? '' : l.length ? rsShort(sumAmt(l)) + ' · ' + [...new Set(l.map(x => x._k === 'me' ? 'You' : wifeName()))].join('+') : 'not found'}</small></div>`; }).join('')}</div>
+    <div class="flex small mt"><span>Paid this FY: <b>${rs(sumAmt(inY))}</b></span><span class="sp"></span><span class="muted">You ${rs(sumAmt(inY.filter(x => x._k === 'me')))} · ${esc(wifeName())} ${rs(sumAmt(inY.filter(x => x._k === 'wife')))}</span></div>
+    <div class="small muted mt">Payments to <b>Vilas Babar</b> (and anything tagged Rent) from both your statements. Upload ${esc(wifeName())}’s statements to fill in the months she paid.</div></div>`;
+}
+function expenseTab(k) {
+  const key = 'exp_' + k, { p, r, q } = fbState(key, 'm0'), g = VIEW.sub['g_' + key] || '';
+  const base = live(P(k).txns).filter(t => catType(t.cat) === 'exp' && t.date >= r[0] && t.date <= r[1] && txMatch(t, q));
+  const items = catItems(base), tot = items.reduce((s, x) => s + x.value, 0);
+  const tx = (g ? base.filter(t => catGroup(t.cat) === g) : base).sort(byDesc);
+  const sug = k === 'me' ? recurringSuggestions('me').slice(0, 4) : [];
+  return `${filterBar(key, { def: 'm0' })}
+  <div class="grid g21"><div class="card"><h3>Where it went · ${perLabel(p)} <small>${rs(tot)}</small></h3>${items.length ? donutPct(items, tot, true) : '<div class="muted small">No spending in this period.</div>'}</div>
+  <div class="card"><h3>Main categories</h3><div class="list">${items.map(x => `<div class="row clk ${g === x.cat.slice(2) ? 'on' : ''}" data-act="rdGrp" data-k="${key}" data-g="${x.cat.slice(2)}" style="cursor:pointer"><div class="ico">${groupIcon(x.cat.slice(2))}</div><div class="mid"><div class="t1">${esc(groupName(x.cat.slice(2)))}</div><div class="t2">${Math.round(x.value / (tot || 1) * 100)}%</div></div><div class="r num b">${rs(x.value)}</div></div>`).join('') || '<div class="muted small">—</div>'}</div></div></div>
+  ${rentCard(VIEW.sub.rentFy)}
+  ${sug.length ? `<div class="card mt"><h3>🔁 Repeating payments found <small>add as bills to get reminders</small></h3><div class="list">${sug.map(s => `<div class="row"><div class="ico">${catIcon(s.cat)}</div><div class="mid"><div class="t1">${esc(s.name)}</div><div class="t2">${rs(s.amount)} · ${esc(s.cycle)} · seen ${s.count}×</div></div><button class="btn sm" data-act="addSugg" data-k="${esc(s.key)}">＋ Add</button></div>`).join('')}</div></div>` : ''}
+  <div class="sec">${g ? groupIcon(g) + ' ' + esc(groupName(g)) : 'All expenses'} — ${perLabel(p)} · ${rs(net(tx, 'dr'))}${g ? `<span class="sp"></span><button class="btn sm ghost" data-act="rdGrp" data-k="${key}" data-g="">Show all</button>` : ''}</div>${listCard(tx, k, lim(key), key)}`;
+}
+
+/* ---------------- 🧑 Me ---------------- */
+const ME_TABS = [['inc', '💰 Income'], ['abb', '👩 To ABB'], ['inv', '📈 Investments'], ['exp', '🧾 Expenses'], ['acc', '🏦 Accounts & entries']];
+VIEWS.me = () => {
+  const s = VIEW.sub.meSec || 'inc';
+  const tabs = `<div class="tabs">${ME_TABS.map(([k, l]) => `<button class="tab ${s === k ? 'on' : ''}" data-act="rdSec" data-base="meSec" data-v="${k}">${k === 'abb' ? '👩 To ' + esc(wifeName()) : l}</button>`).join('')}</div>`;
+  if (s === 'acc') return tabs + VIEWS.money();
+  return tabs + (s === 'inc' ? incomeTab() : s === 'abb' ? abbTab() : s === 'inv' ? investTab('me') : expenseTab('me'));
+};
+TITLES.me = 'Me';
+
+/* ---------------- 👩 ABB ---------------- */
+const _wifeV = VIEWS.wife;
+VIEWS.wife = () => {
+  const s = VIEW.sub.wSec || 'from', W = esc(wifeName());
+  const tabs = `<div class="tabs">${[['from', '💞 From Ritesh'], ['inv', '📈 Investments'], ['exp', '🧾 Expenses'], ['acc', '🏦 Accounts & entries']].map(([k, l]) => `<button class="tab ${s === k ? 'on' : ''}" data-act="rdSec" data-base="wSec" data-v="${k}">${l}</button>`).join('')}</div>`;
+  if (s === 'from') { const keep = VIEW.sub.wife; VIEW.sub.wife = 'overview'; const h = _wifeV(); VIEW.sub.wife = keep; return tabs + h.slice(h.indexOf('</div>') + 6); }
+  if (s === 'acc') { if (!VIEW.sub.wife || VIEW.sub.wife === 'overview') VIEW.sub.wife = 'txns'; return tabs + _wifeV(); }
+  return tabs + (s === 'inv' ? investTab('wife') : expenseTab('wife'));
+};
+
+/* ---------------- 🏠 Home: the month in one line + reminders ---------------- */
+const _dashV = VIEWS.dashboard;
+VIEWS.dashboard = () => {
+  const hh = VIEW.sub.homeHH === '1', mk = VIEW.sub.dashMonth || latestDataMonth(['me']), [f, t] = monthRange(mk);
+  const T = totals(txIn('me', f, t)), W = totals(txIn('wife', f, t));
+  const inc = T.inc + (hh ? W.inc : 0), abb = hh ? 0 : T.abb, inv = T.inv + (hh ? W.inv : 0), exp = T.exp + (hh ? W.exp : 0), left = inc - abb - inv - exp;
+  const box = (ic, l, v, c, act = '') => `<div class="flowb ${c}" ${act}><small>${ic} ${l}</small><b class="num">${rsShort(v)}</b></div>`;
+  const flow = `<div class="card" style="margin-bottom:14px"><div class="flex" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">${ymLabel(mk)} at a glance</h3><span class="sp"></span>${segBtns('homeHH', hh ? '1' : '0', [['0', 'Me'], ['1', '🏠 Household']])}</div>
+    <div class="flowrow">${box('💰', 'Income', inc, 'grn', 'data-act="rdGo" data-v="inc"')}<i>→</i>${hh ? '' : box('👩', 'To ' + esc(wifeName()), abb, 'vio', 'data-act="rdGo" data-v="abb"') + '<i>→</i>'}${box('📈', 'Invested', inv, 'acc', 'data-act="rdGo" data-v="inv"')}<i>→</i>${box('🧾', 'Spent', exp, 'red', 'data-act="rdGo" data-v="exp"')}<i>=</i>${box(left >= 0 ? '🟢' : '🔴', 'Left over', left, left >= 0 ? 'grn' : 'red')}</div>
+    ${hh ? `<div class="small muted mt">Household = you + ${esc(wifeName())}: her actual spending counts, your transfers to her don’t (no double counting).</div>` : ''}</div>`;
+  return remindHtml() + flow + monthSummary() + _dashV();
+};
+function monthSummary() {
+  const lm = prevMonth(ym(today())), T = totals(txIn('me', ...monthRange(lm)));
+  if (!T.exp && !T.inc) return '';
+  const prev = lastMonths(prevMonth(lm), 6).map(k => totals(txIn('me', ...monthRange(k))).exp).filter(v => v > 0), avg = prev.length ? prev.reduce((s, v) => s + v, 0) / prev.length : 0;
+  const top = catItems(txIn('me', ...monthRange(lm))).slice(0, 3);
+  return `<div class="card" style="margin-bottom:14px"><h3>📋 ${ymLabel(lm)} summary</h3><div class="small">Income <b class="cr">${rs(T.inc)}</b> · To ${esc(wifeName())} <b>${rs(T.abb)}</b> · Invested <b>${rs(T.inv)}</b> · Spent <b class="dr">${rs(T.exp)}</b>${avg ? ` <span class="muted">(${T.exp > avg ? '▲' : '▼'} ${Math.abs(Math.round((T.exp - avg) / avg * 100))}% vs your 6-month average ${rs(Math.round(avg))})</span>` : ''}</div>${top.length ? `<div class="small muted mt">Biggest: ${top.map(x => esc(x.label) + ' ' + rs(x.value)).join(' · ')}</div>` : ''}</div>`;
+}
+function remindHtml() {
+  const d = +today().slice(8); if (d > 12) return '';
+  const lm = prevMonth(ym(today())), end = monthRange(lm)[1];
+  const due = [['me', 'Me'], ['wife', wifeName()], ['parents', 'Dad']].flatMap(([k, who]) => P(k).accounts.filter(a => !a.deleted && a.status !== 'closed' && !['Cash', 'UPI app', 'Credit card'].includes(a.type) && live(P(k).txns).some(t => t.account === a.id && t.source === 'import')).filter(a => { const last = live(P(k).txns).filter(t => t.account === a.id && t.source === 'import').map(t => t.date).sort().pop(); return last < addDays(end, -3); }).map(a => esc(a.name) + (k === 'me' ? '' : ' (' + esc(who) + ')')));
+  if (!due.length) return '';
+  return `<div class="alert acc" style="margin-bottom:14px">📅 <div><b>Time to download ${ymLabel(lm)} statements:</b> ${due.join(', ')}.</div><span class="sp"></span><button class="btn sm pri" data-act="go" data-tab="stmts">Upload</button></div>`;
+}
+
+/* ---------------- 🧾 NRI tax pack ---------------- */
+VIEWS.tax = () => {
+  const y = VIEW.sub.taxFy ?? fyNum(today()) - 1, [f, t] = fyRange(y), tx = txIn('me', f, t);
+  const accT = a => (P('me').accounts.find(x => x.id === a) || {}).type || '';
+  const intr = tx.filter(x => x.cat === 'interest' && x.dir === 'cr'), byT = ty => intr.filter(x => accT(x.account) === ty);
+  const tds = tx.reduce((s, x) => s + (+x.tax || 0), 0) + sumAmt(tx.filter(x => x.cat === 'taxes' && x.dir === 'dr' && /TDS/i.test(x.desc)));
+  const sal = tx.filter(x => x.cat === 'wages' && x.dir === 'cr');
+  const inv = tx.filter(x => catGroup(x.cat) === 'invest'), plat = {}; inv.forEach(x => { const b = brokerOf(x) || 'Other'; plat[b] = plat[b] || { i: 0, o: 0 }; plat[b][x.dir === 'dr' ? 'i' : 'o'] += x.amount; });
+  const rent = ['me', 'wife'].flatMap(k => txIn(k, f, t)).filter(x => x.cat === 'rent' && x.dir === 'dr');
+  const ys = []; for (let v = fyNum(today()); v >= 2018; v--) ys.push(v);
+  const row = (l, v, n = '') => `<tr><td>${l}</td><td class="ra num b">${v}</td><td class="small muted">${n}</td></tr>`;
+  return `<div class="flex" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><select class="inp" data-act="taxFy" style="width:auto">${ys.map(v => `<option value="${v}" ${v === y ? 'selected' : ''}>FY ${v}-${String(v + 1).slice(2)} (AY ${v + 1}-${String(v + 2).slice(2)})</option>`).join('')}</select><span class="sp"></span><button class="btn pri" data-act="taxXlsx" data-y="${y}">⬇ Excel for this FY</button></div>
+  <div class="alert acc">🧾 <div>Figures for your CA, worked out from the statements in the app. Check them against bank interest certificates and broker P&L reports. Your residential status depends on days in India — see your <b>Sea Days Ledger</b> (NRI if in India fewer than 182 days that FY, with the usual extra conditions).</div></div>
+  <div class="card mt" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Item</th><th class="ra">Amount</th><th>Note</th></tr></thead><tbody>
+    ${row('🚢 Salary received (ship)', rs(sumAmt(sal)), sal.length + ' credits · ' + [...new Set(sal.map(x => accName('me', x.account)))].map(esc).join(', ') + ' · foreign-ship salary of an NRI is usually not taxable in India')}
+    ${row('🏦 Interest — NRE (tax-free)', rs(sumAmt(byT('NRE'))), byT('NRE').length + ' credits')}
+    ${row('🏦 Interest — NRO (taxable)', rs(sumAmt(byT('NRO'))), byT('NRO').length + ' credits')}
+    ${row('🏦 Interest — other savings (taxable)', rs(sumAmt(intr.filter(x => !['NRE', 'NRO'].includes(accT(x.account))))), 'PNB / HDFC / others')}
+    ${row('🧾 TDS seen in statements', rs(tds), 'from interest lines (“Int: … TAX: …”) and TDS debits')}
+    ${row('🏠 Rent paid (you + ' + esc(wifeName()) + ')', rs(sumAmt(rent)), rent.length + ' payments')}
+  </tbody></table></div></div>
+  <div class="sec">Investments & trading — money in / out (FY ${y}-${String(y + 1).slice(2)})</div>
+  <div class="card" style="padding:8px"><div class="tblw"><table class="t"><thead><tr><th>Platform</th><th class="ra">Put in</th><th class="ra">Taken out</th><th class="ra">Out − in</th></tr></thead><tbody>${Object.entries(plat).map(([b, v]) => `<tr><td>${esc(b)}</td><td class="ra num">${rs(v.i)}</td><td class="ra num">${rs(v.o)}</td><td class="ra num b">${rs(v.o - v.i)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">None this year.</td></tr>'}</tbody></table></div></div>
+  <div class="small muted mt">For F&O and capital gains use the broker’s tax P&L report (Zerodha Console, Fyers, Delta) — bank cash flow is shown here only as a cross-check.</div>`;
+};
+TITLES.tax = 'NRI tax pack';
+function taxXlsx(y) {
+  if (!window.XLSX) { toast('Excel library not loaded'); return; }
+  const [f, t] = fyRange(y), wb = XLSX.utils.book_new();
+  ['me', 'wife', 'parents'].forEach(k => { const rows = txIn(k, f, t).sort((a, b) => a.date.localeCompare(b.date)).map(x => ({ Date: x.date, Account: accName(k, x.account), Payee: x.payee || '', Narration: x.desc, Debit: x.dir === 'dr' ? x.amount : '', Credit: x.dir === 'cr' ? x.amount : '', Main: groupName(catGroup(x.cat)), Category: catName(x.cat), Platform: brokerOf(x) || '', Note: x.note || '' }));
+    if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), k === 'me' ? 'Me' : k === 'wife' ? wifeName() : 'Dad'); });
+  if (!wb.SheetNames.length) { toast('No entries in this FY'); return; }
+  XLSX.writeFile(wb, `BlueWave-FY${y}-${String(y + 1).slice(2)}.xlsx`);
+}
+
+/* ---------------- 🔎 Search everything ---------------- */
+function gSearch() {
+  modal('Search everything', `<input class="inp" id="gs_q" placeholder="Name, amount, note, app, month (e.g. Vilas, 37118, V Ships, Oct 2026)…" autocomplete="off"><div id="gs_r" class="mt"></div>`, '', { wide: true, onMount: m => { const i = $('#gs_q', m); i.value = RD.lastQ || ''; i.focus(); const run = () => { RD.lastQ = i.value; $('#gs_r', m).innerHTML = gResults(i.value); }; i.oninput = () => { clearTimeout(RD.t); RD.t = setTimeout(run, 180); }; run(); } });
+}
+function gResults(q) {
+  q = q.toLowerCase().trim(); if (q.length < 2) return '<div class="muted small">Type at least 2 letters. Searches all transactions (you, ' + esc(wifeName()) + ', Dad), bills, friends and numbers.</div>';
+  const mon = d => (MSHORT[+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4)).toLowerCase();
+  const hit = (t, k) => (maskWife(t.payee || '') + ' ' + maskWife(t.desc) + ' ' + (t.note || '') + ' ' + t.amount + ' ' + Math.round(t.amount) + ' ' + catName(t.cat) + ' ' + groupName(catGroup(t.cat)) + ' ' + (t.app || '') + ' ' + mon(t.date) + ' ' + (brokerOf(t) || '') + ' ' + (employerOf(t) || '') + ' ' + accName(k, t.account)).toLowerCase().includes(q);
+  const tx = PROFS.flatMap(k => live(P(k).txns).filter(t => hit(t, k)).map(t => ({ t, k }))).sort((a, b) => b.t.date.localeCompare(a.t.date));
+  const who = k => k === 'me' ? 'Me' : k === 'wife' ? wifeName() : 'Dad';
+  const bills = PROFS.flatMap(k => live(P(k).bills || []).filter(b => (b.name + ' ' + (b.match || '') + ' ' + (b.amount || '')).toLowerCase().includes(q)));
+  const frs = live(P('me').friends || []).filter(f => (f.name + ' ' + (f.aliases || []).join(' ')).toLowerCase().includes(q));
+  const ppl = PROFS.flatMap(k => live(P(k).members || [])).filter(m => (m.name + ' ' + [...(m.phones || []), ...(m.emails || [])].map(x => (x.number || '') + ' ' + (x.email || '') + ' ' + (x.linked || []).join(' ')).join(' ')).toLowerCase().includes(q));
+  const out = tx.filter(x => x.t.dir === 'dr'), inn = tx.filter(x => x.t.dir === 'cr');
+  return `${tx.length ? `<div class="small" style="margin-bottom:6px"><b>${tx.length}</b> transactions · out <b class="dr">${rs(sumAmt(out.map(x => x.t)))}</b> · in <b class="cr">${rs(sumAmt(inn.map(x => x.t)))}</b></div><div class="card" style="padding:4px 12px">${tx.slice(0, 80).map(({ t, k }) => txRow(t, k).replace('<div class="t2">', `<div class="t2"><span class="pill">${esc(who(k))}</span> ${fmtDate(t.date)} · `)).join('')}${tx.length > 80 ? `<div class="small muted" style="padding:8px">+ ${tx.length - 80} more — add more words to narrow it down.</div>` : ''}</div>` : ''}
+  ${bills.length ? `<div class="sec">Bills</div>${bills.map(b => `<div class="row clk" data-act="go" data-tab="bills"><div class="ico">🧾</div><div class="mid"><div class="t1">${esc(b.name)}</div></div><div class="r num">${b.amount ? rs(b.amount) : ''}</div></div>`).join('')}` : ''}
+  ${frs.length ? `<div class="sec">Friends</div>${frs.map(f => `<div class="row clk" data-act="go" data-tab="friends"><div class="ico">🤝</div><div class="mid"><div class="t1">${esc(f.name)}</div></div></div>`).join('')}` : ''}
+  ${ppl.length ? `<div class="sec">Numbers & emails</div>${ppl.map(p => `<div class="row clk" data-act="go" data-tab="contacts"><div class="ico">📇</div><div class="mid"><div class="t1">${esc(p.name)}</div></div></div>`).join('')}` : ''}
+  ${!tx.length && !bills.length && !frs.length && !ppl.length ? '<div class="muted small">Nothing found.</div>' : ''}`;
+}
+
+/* ---------------- faster review: apply a category to every entry from the same payee ---------------- */
+const _txnModal = txnModal;
+txnModal = function (profKey, id) {
+  const t = P(profKey).txns.find(x => x.id === id); const before = t && t.cat;
+  _txnModal(profKey, id);
+  const b = $('#t_save'); if (!b || !t) return;
+  const orig = b.onclick;
+  b.onclick = () => { orig(); if (t.cat === before || !t.payee || payeeKey(t.payee).length < 3) return;
+    const pk = payeeKey(t.payee), others = live(P(profKey).txns).filter(x => x !== t && x.dir === t.dir && payeeKey(x.payee || '') === pk && x.cat !== t.cat && !x.userSet);
+    if (!others.length) return;
+    confirmBox('Do the same for the others?', `${others.length} more entr${others.length === 1 ? 'y' : 'ies'} from <b>${esc(maskWife(t.payee))}</b> → <b>${esc(catName(t.cat))}</b>. Future statements will use it too.`, 'Yes, change all', () => { others.forEach(x => { x.cat = t.cat; x.reviewed = true; x.conf = 'h'; touch(x); }); addRuleObj(profKey, t.payee, t.cat, t.dir); save(); rerender(); toast(others.length + ' entries updated'); });
+  };
+};
+
+/* ---------------- main transactions list: amount & status filters, saved filters, export what’s shown ---------------- */
+const _txPanel = txnsPanel;
+txnsPanel = function (profKey) {
+  const F = VIEW.sub['f_' + profKey] = VIEW.sub['f_' + profKey] || {};
+  const prof = P(profKey), keep = prof.txns;
+  const pass = t => (!F.amin || t.amount >= +F.amin) && (!F.amax || t.amount <= +F.amax) && (!F.st || (F.st === 'review' ? needsReview(t) : F.st === 'manual' ? t.source === 'manual' : F.st === 'upi' ? t.source === 'upi' : true));
+  const extra = F.amin || F.amax || F.st;
+  if (extra) prof.txns = keep.filter(t => t.deleted || pass(t));
+  let h; try { h = _txPanel(profKey); } finally { prof.txns = keep; }
+  if ((S.settings.txView || 'cards') === 'table') return h;
+  const saved = (S.settings.savedF || []).filter(x => x.prof === profKey);
+  const bar = `<div class="chips"><input class="fchip sel" style="width:110px" type="number" placeholder="₹ min" value="${esc(F.amin || '')}" data-act="rdF" data-k="amin" data-prof="${profKey}"><input class="fchip sel" style="width:110px" type="number" placeholder="₹ max" value="${esc(F.amax || '')}" data-act="rdF" data-k="amax" data-prof="${profKey}">
+    <select class="fchip sel" data-act="rdF" data-k="st" data-prof="${profKey}"><option value="">Any status</option>${[['review', 'Needs review'], ['manual', 'Added by hand'], ['upi', 'From app statement only']].map(([v, l]) => `<option value="${v}" ${F.st === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button class="fchip" data-act="rdSaveF" data-prof="${profKey}">⭐ Save filter</button><button class="fchip" data-act="rdExport" data-prof="${profKey}">⬇ Excel of this list</button>
+    ${saved.map((x, i) => `<button class="fchip on" data-act="rdUseF" data-i="${(S.settings.savedF || []).indexOf(x)}">⭐ ${esc(x.name)}</button>`).join('')}</div>`;
+  const at = h.indexOf('<div class="small muted" style="margin:4px 2px 8px">');
+  return at > 0 ? h.slice(0, at) + bar + h.slice(at) : h;
+};
+function filteredList(profKey) {   // same filters as the list
+  const F = VIEW.sub['f_' + profKey] || {}; let a = live(P(profKey).txns);
+  const dr = F.d ? dateRange(F.d) : null; if (dr) a = a.filter(t => t.date >= dr[0] && t.date <= dr[1]);
+  if (F.m) a = a.filter(t => ym(t.date) === F.m); if (F.from) a = a.filter(t => t.date >= F.from && t.date <= F.to);
+  if (F.app) a = a.filter(t => F.app === 'none' ? (t.mode === 'UPI' && t.dir === 'dr' && !t.app) : t.app === F.app);
+  if (F.q) { const q = F.q.toLowerCase(); a = a.filter(t => (maskWife(t.payee || '') + ' ' + maskWife(t.desc) + ' ' + (t.note || '') + ' ' + t.amount + ' ' + (t.app || '') + ' ' + catName(t.cat)).toLowerCase().includes(q)); }
+  if (F.acc) a = a.filter(t => t.account === F.acc); if (F.cat) a = a.filter(t => catIn(t, F.cat)); a = a.filter(t => tyMatch(t, F.ty));
+  if (F.amin) a = a.filter(t => t.amount >= +F.amin); if (F.amax) a = a.filter(t => t.amount <= +F.amax);
+  if (F.st) a = a.filter(t => F.st === 'review' ? needsReview(t) : F.st === 'manual' ? t.source === 'manual' : t.source === 'upi');
+  return a.sort((x, y) => x.date.localeCompare(y.date));
+}
+
+/* ---------------- menu, phone bar, search button ---------------- */
+NAV.length = 0;
+NAV.push(['sec', 'Overview'], ['dashboard', 'Home', '🏠'], ['me', 'Me', '🧑'], ['wife', 'ABB', '👩'], ['parents', 'Mom & Dad', '👪'],
+  ['sec', 'Money'], ['money', 'All transactions', '💰'], ['upcoming', 'Upcoming', '📅'], ['bills', 'Bills', '🧾'], ['fixed', 'Fixed payments', '🔒'], ['subs', 'Subscriptions', '🔁'], ['upi', 'UPI apps & cards', '📱'], ['stmts', 'Statements', '📂'],
+  ['sec', 'People & records'], ['friends', 'Friends', '🤝'], ['contacts', 'Numbers & Emails', '📇'], ['calendar', 'Calendar', '🗓️'], ['history', 'History', '📜'],
+  ['sec', 'Planning & tax'], ['plan', 'Budgets & Goals', '🎯'], ['worth', 'Net worth', '💎'], ['reports', 'Reports', '📊'], ['tax', 'NRI tax pack', '🧾'],
+  ['sec', ''], ['syncup', 'Sync & Update', '⟳'], ['settings', 'Settings', '⚙️']);
+MORE_TILES.length = 0;
+MORE_TILES.push(['parents', '👪', 'Mom & Dad', '#ec4899'], ['money', '💰', 'All transactions', '#3b82f6'], ['upcoming', '📅', 'Upcoming', '#0ea5e9'], ['bills', '🧾', 'Bills', '#ef4444'], ['fixed', '🔒', 'Fixed payments', '#f59e0b'], ['subs', '🔁', 'Subscriptions', '#06b6d4'],
+  ['upi', '📱', 'UPI apps & cards', '#8b5cf6'], ['stmts', '📂', 'Statements', '#0ea5e9'], ['friends', '🤝', 'Friends', '#10b981'], ['contacts', '📇', 'Numbers & Emails', '#64748b'], ['plan', '🎯', 'Budgets & Goals', '#3b82f6'], ['reports', '📊', 'Reports', '#14b8a6'],
+  ['worth', '💎', 'Net worth', '#a855f7'], ['tax', '🧾', 'NRI tax pack', '#f97316'], ['calendar', '🗓️', 'Calendar', '#22c55e'], ['history', '📜', 'History', '#94a3b8'], ['syncup', '⟳', 'Sync & Update', '#22c55e'], ['settings', '⚙️', 'Settings', '#64748b']);
+TITLES.dashboard = 'Home'; TITLES.money = 'All transactions'; TITLES.upi = 'UPI apps & cards';
+const _shell4 = shell;
+shell = function () {
+  _shell4();
+  const sp = $('header.top .sp'); if (sp && !$('[data-act=gsearch]')) sp.insertAdjacentHTML('afterend', '<button class="btn ghost" data-act="gsearch" title="Search everything">🔎</button>');
+  const nav = $('.bnav'); if (!nav) return;
+  const main = ['dashboard', 'me', 'wife'];
+  nav.innerHTML = [['dashboard', '🏠', 'Home'], ['me', '🧑', 'Me'], ['+'], ['wife', '👩', wifeName()], ['more', '▦', 'More']].map(([t, i, l]) => t === '+' ? `<button class="bplus" data-act="fastEntry" aria-label="Add entry"><span>＋</span></button>` : `<button class="${(t === 'more' ? !main.includes(VIEW.tab) : VIEW.tab === t) ? 'on' : ''}" data-act="${t === 'more' ? 'moreSheet' : 'go'}" data-tab="${t}"><span class="ic">${i}</span>${esc(l)}</button>`).join('');
+};
+
+/* ---------------- actions ---------------- */
+Object.assign(ACT, {
+  gsearch: () => gSearch(),
+  rdSec: el => { VIEW.sub[el.dataset.base] = el.dataset.v; VIEW.keepScroll = false; rerender(); },
+  rdPer: el => { VIEW.sub['p_' + el.dataset.k] = el.dataset.v; VIEW.sub['lim_rd_' + el.dataset.k] = 60; VIEW.keepScroll = true; rerender(); },
+  rdMore: el => { VIEW.sub['lim_rd_' + el.dataset.k] = lim(el.dataset.k) + 200; VIEW.keepScroll = true; rerender(); },
+  rdGrp: el => { VIEW.sub['g_' + el.dataset.k] = el.dataset.g; VIEW.keepScroll = true; rerender(); },
+  rdGo: el => { VIEW.tab = 'me'; VIEW.sub.meSec = el.dataset.v; VIEW.sub['p_' + (el.dataset.v === 'exp' ? 'exp_me' : el.dataset.v === 'inv' ? 'inv_me' : el.dataset.v)] = 'm0'; render(); },
+  homeHH: el => { VIEW.sub.homeHH = el.dataset.v; VIEW.keepScroll = true; rerender(); },
+  slipEdit: el => slipModal(el.dataset.id),
+  invVal: el => invValModal(el.dataset.prof, el.dataset.b),
+  taxXlsx: el => taxXlsx(+el.dataset.y),
+  rdSaveF: el => { const k = el.dataset.prof, F = VIEW.sub['f_' + k] || {}; const nm = prompt('Name for this filter (e.g. Rent · This FY):'); if (!nm) return; S.settings.savedF = (S.settings.savedF || []).concat([{ name: nm.trim(), prof: k, F: JSON.parse(JSON.stringify(F)) }]); save(); rerender(); toast('Filter saved'); },
+  rdUseF: el => { const x = (S.settings.savedF || [])[+el.dataset.i]; if (!x) return; VIEW.sub['f_' + x.prof] = JSON.parse(JSON.stringify(x.F)); VIEW.keepScroll = true; rerender(); },
+  rdExport: el => { const k = el.dataset.prof, a = filteredList(k); if (!a.length) { toast('Nothing to export'); return; } if (!window.XLSX) { toast('Excel library not loaded'); return; }
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a.map(x => ({ Date: x.date, Account: accName(k, x.account), Payee: x.payee || '', Narration: x.desc, Debit: x.dir === 'dr' ? x.amount : '', Credit: x.dir === 'cr' ? x.amount : '', Main: groupName(catGroup(x.cat)), Category: catName(x.cat), App: x.app || '', Note: x.note || '' }))), 'Entries');
+    XLSX.writeFile(wb, 'BlueWave-entries-' + today() + '.xlsx'); },
+});
+Object.assign(CHANGE, {
+  rdF: el => { const F = VIEW.sub['f_' + el.dataset.prof] = VIEW.sub['f_' + el.dataset.prof] || {}; F[el.dataset.k] = el.value; VIEW.keepScroll = true; rerender(); },
+  rentFy: el => { VIEW.sub.rentFy = +el.value; VIEW.keepScroll = true; rerender(); },
+  taxFy: el => { VIEW.sub.taxFy = +el.value; rerender(); },
+});
+document.addEventListener('input', e => { const el = e.target; if (el.dataset && el.dataset.act === 'rdQ') { clearTimeout(RD.q); RD.q = setTimeout(() => { VIEW.sub['q_' + el.dataset.k] = el.value; VIEW.keepScroll = true; rerender(); const i = $(`[data-act=rdQ][data-k="${el.dataset.k}"]`); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); } });
 </script>
 <script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').then(r=>{window.__swReg=r;r.addEventListener('updatefound',()=>{const w=r.installing;w&&w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){document.querySelectorAll('.toast.upd').forEach(x=>x.remove());const b=document.createElement('div');b.className='toast upd';b.innerHTML='✨ New version ready — <b>tap to update</b>';b.onclick=()=>{window.bwfApplyUpdate?window.bwfApplyUpdate():location.reload()};document.body.appendChild(b);}});});}).catch(()=>{});}</script>
 </body></html>
